@@ -1,0 +1,380 @@
+function interview() {
+  return {
+    logged: !!icp.state.token,
+    isAdmin: false,
+    sessionId: null,
+    questionLimit: 10,
+    difficulty: "Intermediate",
+    transcript: [],
+    answer: "",
+    speaker: true,
+    voiceGender: localStorage.getItem('interview_voice_gender') || 'female',
+    mic: false,
+    thinking: false,
+    speaking: false,
+    recognition: null,
+    hasResume: false,
+    jobTitle: "",
+    resumeFeedback: null,
+    interviewAttempts: 0,
+    maxInterviewAttempts: 3,
+    readinessScore: null,
+    feedbackExplanation: "",
+    getScoreColorClass() {
+      if (!this.readinessScore) return '';
+      const score = parseInt(this.readinessScore);
+      if (score >= 80) return 'score-high';
+      if (score >= 50) return 'score-medium';
+      return 'score-low';
+    },
+    sessionTime: 0,
+    timerId: null,
+    interviewTime: 1200, // 20 minutes default
+    interviewTimerId: null,
+    formatTime(seconds) {
+      if (isNaN(seconds) || seconds === null || seconds === undefined) return '0:00';
+      const totalSeconds = Math.max(0, Math.floor(seconds));
+      const m = Math.floor(totalSeconds / 60);
+      const s = totalSeconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    },
+    checkAdmin() {
+      if (!this.logged) return;
+      fetch('/api/auth/me', {
+        headers: { 'Authorization': 'Bearer ' + icp.state.token }
+      })
+        .then(r => r.json())
+        .then(me => {
+          this.isAdmin = me.role === 'admin' || me.role === 'super_admin';
+        })
+        .catch(() => { this.isAdmin = false; });
+    },
+    startTimer() {
+      if (this.timerId) return;
+      const token = icp.state.token;
+      if (!token) return;
+      const payload = icp.decodeToken(token);
+      if (!payload || !payload.exp) return;
+      const exp = payload.exp;
+      localStorage.setItem('session_expiry_user', exp);
+      const now = Math.floor(Date.now() / 1000);
+      this.sessionTime = Math.max(0, exp - now);
+      this.timerId = setInterval(() => {
+        if (this.sessionTime > 0) {
+          this.sessionTime--;
+        } else {
+          clearInterval(this.timerId);
+          this.timerId = null;
+          localStorage.removeItem('session_expiry_user');
+          alert('Your session has expired. Please login again.');
+          icp.logout();
+        }
+      }, 1000);
+    },
+    startInterviewTimer() {
+      this.stopInterviewTimer();
+      
+      // Calculate time based on question limit
+      // 10 -> 15 min (900s), 15 -> 25 min (1500s), 20 -> 35 min (2100s)
+      const limit = parseInt(this.questionLimit);
+      if (limit === 10) this.interviewTime = 900;
+      else if (limit === 15) this.interviewTime = 1500;
+      else if (limit === 20) this.interviewTime = 2100;
+      else this.interviewTime = 1200; // fallback
+
+      this.interviewTimerId = setInterval(() => {
+        if (this.interviewTime > 0) {
+          this.interviewTime--;
+        } else {
+          this.stopInterviewTimer();
+          Swal.fire({
+            icon: 'info',
+            title: 'Practice Time Up',
+            text: 'Your recommended practice time has ended, but you can still continue to finish your interview.',
+            confirmButtonColor: '#2563eb'
+          });
+        }
+      }, 1000);
+    },
+    stopInterviewTimer() {
+      if (this.interviewTimerId) {
+        clearInterval(this.interviewTimerId);
+        this.interviewTimerId = null;
+      }
+    },
+    init() {
+      this.startTimer();
+      this.checkAdmin();
+
+      // Pre-load voices for TTS
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+          window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+        }
+      }
+
+      // Watch transcript for changes and scroll to bottom
+      this.$watch('transcript', () => {
+        this.$nextTick(() => {
+          const box = this.$refs.transcriptBox;
+          if (box) {
+            box.scrollTo({
+              top: box.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        });
+      });
+
+      // Fetch limits
+      try {
+        fetch('/api/interview/limits', {
+          headers: { 'Authorization': 'Bearer ' + icp.state.token }
+        })
+          .then(r => {
+            if (r.status === 200) return r.json();
+            return null;
+          })
+          .then(j => {
+            if (j) {
+              this.interviewAttempts = j.remaining;
+              this.maxInterviewAttempts = j.limit;
+            }
+          })
+          .catch(() => { });
+      } catch (e) { }
+
+      const feedback = localStorage.getItem("resume_feedback");
+      const title = localStorage.getItem("target_job_title");
+      if (feedback && title) {
+        try {
+          this.resumeFeedback = JSON.parse(feedback);
+          this.jobTitle = title;
+          this.hasResume = true;
+        } catch (e) {
+          console.error("Error parsing resume feedback", e);
+        }
+      }
+    },
+    get iconClass() { if (this.thinking) return 'icon thinking'; if (this.speaking) return 'icon speaking'; return 'icon idle'; },
+    get transcriptHtml() {
+      return this.transcript.map(t => `<div><strong>${t.role === 'assistant' ? 'Interviewer' : 'You'}:</strong> ${t.text}</div>`).join('');
+    },
+    tts(text) {
+      if (!this.speaker) return;
+      if (!('speechSynthesis' in window)) return;
+      
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = window.speechSynthesis.getVoices();
+
+      // Smoother settings
+      u.rate = 0.95; // Slightly slower for better clarity
+      u.pitch = 1.0;
+
+      if (this.voiceGender === 'male') {
+        // Priority for smoother male voices
+        const maleVoice = voices.find(v => v.lang.startsWith('en') && (
+          v.name.toLowerCase().includes('natural') && v.name.toLowerCase().includes('male') ||
+          v.name.toLowerCase().includes('guy') || 
+          v.name.toLowerCase().includes('google uk english male') ||
+          v.name.toLowerCase().includes('microsoft james') ||
+          v.name.toLowerCase().includes('david')
+        )) || voices.find(v => v.name.toLowerCase().includes('male') && v.lang.startsWith('en'));
+        
+        if (maleVoice) u.voice = maleVoice;
+      } else {
+        // Priority for smoother female voices
+        const femaleVoice = voices.find(v => v.lang.startsWith('en') && (
+          v.name.toLowerCase().includes('natural') && v.name.toLowerCase().includes('female') ||
+          v.name.toLowerCase().includes('aria') ||
+          v.name.toLowerCase().includes('google uk english female') ||
+          v.name.toLowerCase().includes('microsoft zira') ||
+          v.name.toLowerCase().includes('samantha')
+        )) || voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith('en'));
+        
+        if (femaleVoice) u.voice = femaleVoice;
+      }
+
+      u.onstart = () => { this.speaking = true };
+      u.onend = () => { this.speaking = false };
+      u.onerror = () => { this.speaking = false };
+      
+      window.speechSynthesis.speak(u);
+    },
+    extractFeedback(text) {
+      // Regular expression to find score (e.g., 85/100 or Score: 85)
+      const scoreMatch = text.match(/(\d{1,3})\s?\/\s?100/) || text.match(/Score:\s?(\d{1,3})/i);
+      if (scoreMatch) {
+        this.readinessScore = scoreMatch[1];
+        // The rest of the message is the explanation
+        this.feedbackExplanation = text.replace(scoreMatch[0], "").replace(/Interview Readiness Score/i, "").trim();
+      } else if (text.includes("accuracy") || text.includes("incomplete") || text.includes("early")) {
+        // Case for early exit
+        this.readinessScore = "N/A";
+        this.feedbackExplanation = text;
+      }
+    },
+    initRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return null;
+      const rec = new SR();
+      rec.lang = 'en-US';
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      return rec;
+    },
+    record() {
+      if (!this.sessionId) return;
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        Swal.fire({ icon: 'info', title: 'Mic not supported', text: 'Your browser does not support Speech Recognition. Please type your answer.' });
+        return;
+      }
+      if (!this.recognition) this.recognition = this.initRecognition();
+      if (!this.recognition) return;
+      this.recognition.onresult = (e) => {
+        const t = Array.from(e.results).map(r => r[0].transcript).join(' ').trim();
+        if (t) this.answer = t;
+      };
+      this.recognition.onerror = () => {
+        Swal.fire({ icon: 'error', title: 'Mic error', text: 'Please try recording again or type your answer.' });
+      };
+      this.recognition.start();
+    },
+    async start() {
+      if (!this.hasResume) {
+        Swal.fire('Error', 'Please upload your resume in the dashboard first.', 'error');
+        return;
+      }
+      if (this.interviewAttempts <= 0) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Daily Limit Reached',
+          text: 'You have used all 3 interview sessions for today. Please wait until 00:00 Malaysia Time for the reset.',
+          confirmButtonColor: '#ffc107'
+        });
+        return;
+      }
+      this.thinking = true;
+      this.transcript = [];
+      this.readinessScore = null;
+      this.feedbackExplanation = "";
+      const fd = new FormData();
+      if (this.jobTitle) fd.append('job_title', this.jobTitle);
+      if (this.resumeFeedback) fd.append('resume_feedback', JSON.stringify(this.resumeFeedback));
+      fd.append('questions_limit', this.questionLimit);
+      fd.append('difficulty', this.difficulty);
+
+      fetch('/api/interview/start', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + icp.state.token },
+        body: fd
+      })
+        .then(r => {
+          if (r.status === 401) return null;
+          if (!r.ok) {
+            return r.json().then(j => {
+              if ((r.status === 429 || r.status === 400) && j.detail && j.detail.includes("Daily interview session limit")) {
+                this.interviewAttempts = 0;
+                Swal.fire({
+                  title: 'Limit Reached',
+                  html: `
+                        <div class='mb-3'>${j.detail}</div>
+                        <div class='small text-secondary reset-info-text'>Resets at 00:00 Malaysia Time (GMT+8)</div>
+                      `,
+                  icon: 'warning',
+                  confirmButtonColor: '#3085d6'
+                });
+              } else {
+                Swal.fire('Error', j.detail || 'Failed to start interview', 'error');
+              }
+              return null;
+            });
+          }
+          return r.json();
+        })
+        .then(j => {
+          if (!j) return;
+          this.sessionId = j.session_id;
+          this.transcript.push({ role: 'assistant', text: j.message });
+          this.tts(j.message);
+          this.interviewAttempts = Math.max(0, this.interviewAttempts - 1);
+          this.startInterviewTimer();
+        })
+        .finally(() => { this.thinking = false });
+    },
+    end() {
+      if (!this.sessionId) return;
+      fetch('/api/interview/' + this.sessionId + '/end', { method: 'POST', headers: { 'Authorization': 'Bearer ' + icp.state.token } })
+        .then(r => {
+          if (r.status === 401) return null;
+          return r.json();
+        })
+        .then(j => {
+          if (j && j.message) {
+            this.transcript.push({ role: 'assistant', text: j.message });
+            this.tts(j.message);
+            this.extractFeedback(j.message);
+          }
+          this.sessionId = null;
+          this.stopInterviewTimer();
+        });
+    },
+    async send() {
+      const text = this.answer.trim();
+      if (!text) return;
+      this.answer = "";
+      this.transcript.push({ role: 'user', text });
+      this.thinking = true;
+      fetch('/api/interview/' + this.sessionId + '/reply', { method: 'POST', headers: { 'Authorization': 'Bearer ' + icp.state.token, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ user_text: text }).toString() })
+        .then(r => { if (r.status === 401) return null; return r.json() })
+        .then(j => {
+          if (!j) return;
+          if (j.message) {
+            this.transcript.push({ role: 'assistant', text: j.message });
+            this.tts(j.message);
+          }
+          if (j.ended) {
+            this.extractFeedback(j.message);
+            this.stopInterviewTimer();
+            Swal.fire({
+              icon: 'success',
+              title: 'Interview Completed',
+              text: 'Great job! You have completed the interview session. You can now view your history or start a new one.',
+              confirmButtonColor: '#2563eb'
+            });
+            this.sessionId = null;
+          }
+        })
+        .finally(() => { this.thinking = false });
+    },
+    async resetQuota() {
+      if (!confirm('Are you sure you want to reset your quotas? (This is for development/testing only)')) return;
+      try {
+        const r = await fetch('/api/interview/reset-quota', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + icp.state.token }
+        });
+        if (r.ok) {
+          Swal.fire('Success', 'Quotas have been reset. Please refresh the page or wait for limits to update.', 'success');
+          // Refresh limits
+          const res = await fetch('/api/interview/limits', {
+            headers: { 'Authorization': 'Bearer ' + icp.state.token }
+          });
+          if (res.ok) {
+            const j = await res.json();
+            this.interviewAttempts = j.remaining;
+            this.maxInterviewAttempts = j.limit;
+          }
+        } else {
+          Swal.fire('Error', 'Failed to reset quotas.', 'error');
+        }
+      } catch (e) {
+        Swal.fire('Error', 'Something went wrong.', 'error');
+      }
+    }
+  }
+}

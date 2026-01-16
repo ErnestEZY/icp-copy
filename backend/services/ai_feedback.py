@@ -1,0 +1,72 @@
+import json
+import re
+from typing import List, Dict, Any
+from mistralai import Mistral
+from ..config import MISTRAL_API_KEY
+
+from .rag_engine import rag_engine
+
+def build_resume_prompt(text: str, context: str = "") -> str:
+    prompt = (
+        "You are a professional resume reviewer. Analyze the following resume and provide structured feedback in strictly valid JSON format. "
+        "Do not include any markdown formatting (like ```json). Return ONLY the JSON object.\n\n"
+    )
+    
+    if context:
+        prompt += (
+            "### EVALUATION CRITERIA (RAG CONTEXT)\n"
+            "Use the following guidelines to evaluate the resume:\n"
+            f"{context}\n\n"
+        )
+
+    prompt += (
+        "The JSON must have the following keys:\n"
+        "- \"Score\": an integer from 0 to 100 representing the overall quality.\n"
+        "- \"Advantages\": a list of strings highlighting strong points.\n"
+        "- \"Disadvantages\": a list of strings highlighting weak points.\n"
+        "- \"Suggestions\": a list of strings for improvement.\n"
+        "- \"Keywords\": a list of 10-15 essential skills and industry keywords strictly extracted from the resume text.\n\n"
+        "Resume Text:\n" + text
+    )
+    return prompt
+
+def parse_json_response(resp: str) -> Dict[str, Any]:
+    # Remove any markdown code block markers if present
+    clean_resp = re.sub(r'```json\s*|\s*```', '', resp).strip()
+    try:
+        return json.loads(clean_resp)
+    except json.JSONDecodeError:
+        # Fallback if JSON is malformed
+        return {
+            "Score": 50,
+            "Advantages": ["Could not parse detailed advantages."],
+            "Disadvantages": ["Could not parse detailed disadvantages."],
+            "Suggestions": ["Please try again."],
+            "Keywords": []
+        }
+
+def get_feedback(text: str) -> Dict[str, Any]:
+    if not MISTRAL_API_KEY:
+        return {
+            "Score": 75,
+            "Advantages": ["Clear structure", "Relevant experience"],
+            "Disadvantages": ["Generic statements", "Missing quantified achievements"],
+            "Suggestions": ["Add metrics", "Tailor for job keywords"],
+            "Keywords": ["Python", "FastAPI", "MongoDB", "Resume", "Interview"],
+        }
+    
+    # RAG Step: Retrieve relevant context based on resume content
+    # We take the first 1000 characters for retrieval to avoid overhead
+    relevant_chunks = rag_engine.retrieve(text[:1000], top_k=5)
+    context = "\n---\n".join(relevant_chunks)
+    
+    client = Mistral(api_key=MISTRAL_API_KEY)
+    
+    completion = client.chat.complete(
+        model="mistral-large-latest",
+        messages=[{"role": "user", "content": build_resume_prompt(text, context)}],
+        temperature=0.2,
+        response_format={"type": "json_object"}
+    )
+    content = completion.choices[0].message.content
+    return parse_json_response(content)

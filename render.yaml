@@ -1,0 +1,24 @@
+services:
+  # 1. Backend Service (FastAPI)
+  - type: web
+    name: fyp-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 4 -k uvicorn.workers.UvicornWorker backend.main:app
+    envVars:
+      - key: MONGO_URI
+        sync: false # Set in Render Dashboard
+      - key: MISTRAL_API_KEY
+        sync: false # Set in Render Dashboard
+      - key: JWT_SECRET
+        generateValue: true
+
+  # 2. Nginx Service (Static Files + Proxy)
+  - type: web
+    name: fyp-frontend
+    env: docker
+    dockerfilePath: Dockerfile.nginx
+    plan: free # Use free plan if available
+    envVars:
+      - key: BACKEND_URL
+        value: http://fyp-backend:8000 # Internal URL

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File Preview</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .preview-frame { width: 100%; height: 80vh; border: none; }
+  </style>
+  <script>
+    function qp(name){
+      const u = new URL(window.location.href);
+      return u.searchParams.get(name);
+    }
+  </script>
+</head>
+<body x-data="app()" x-init="init()" @auth:changed.window="logged = !!icp.state.token; if(logged) startTimer();">
+  <nav class="navbar navbar-dark">
+    <div class="container d-flex align-items-center">
+      <div class="d-flex align-items-center gap-3">
+        <a class="navbar-brand" href="/">ICP Admin</a>
+        <a class="btn btn-outline-warning btn-sm" href="/static/pages/admin_panel.html">Back to Admin Panel</a>
+      </div>
+      <div class="ms-auto">
+        <button class="btn btn-outline-danger" onclick="icp.logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Admin Session Timer Display - Only show when 1 minute left -->
+  <div class="session-timer-badge" x-show="logged && sessionTime > 0 && sessionTime <= 60" x-transition x-cloak>
+    <i class="bi bi-shield-lock" :class="sessionTime <= 30 ? 'timer-critical' : ''"></i>
+    <span>Admin Session: <span x-text="formatTime(sessionTime)"></span></span>
+    <span class="ms-2 small text-warning" x-show="sessionTime <= 60 && sessionTime > 58">Time is running out!</span>
+  </div>
+  <div class="container py-4">
+    <div class="card p-3">
+      <h5 class="mb-3" x-text="detail ? detail.filename : 'Loading...'"></h5>
+      <template x-if="errorMsg">
+        <div class="alert alert-danger" x-text="errorMsg"></div>
+      </template>
+      <template x-if="detail && detail.mime_type==='application/pdf'">
+        <iframe class="preview-frame" :src="fileUrl"></iframe>
+      </template>
+      <template x-if="detail && detail.mime_type!=='application/pdf'">
+        <div>
+          <p class="mb-2">Preview is available for PDF only. Use the link below to open or download the original file.</p>
+          <a class="btn btn-primary btn-sm" :href="fileUrl" target="_blank">Open File</a>
+          <div class="mt-3">
+            <h6>Extracted Text</h6>
+            <pre class="bg-dark p-3" x-text="detail.text"></pre>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+    function app(){
+        return {
+          logged: !!icp.state.token,
+          id: null,
+        detail: null,
+        fileUrl: '',
+        errorMsg: '',
+        sessionTime: 0,
+        timerId: null,
+        formatTime(seconds) {
+          if (isNaN(seconds) || seconds === null || seconds === undefined) return '0:00';
+          const totalSeconds = Math.max(0, Math.floor(seconds));
+          const m = Math.floor(totalSeconds / 60);
+          const s = totalSeconds % 60;
+          return `${m}:${s.toString().padStart(2, '0')}`;
+        },
+        startTimer() {
+          if (this.timerId) return;
+          const token = icp.state.token;
+          if (!token) return;
+          const payload = icp.decodeToken(token);
+          if (!payload || !payload.exp) return;
+          const exp = payload.exp;
+          localStorage.setItem('session_expiry_admin', exp);
+          const now = Math.floor(Date.now() / 1000);
+          this.sessionTime = Math.max(0, exp - now);
+          this.timerId = setInterval(() => {
+            if (this.sessionTime > 0) {
+              this.sessionTime--;
+            } else {
+              clearInterval(this.timerId);
+              this.timerId = null;
+              localStorage.removeItem('session_expiry_admin');
+              alert('Admin session has expired. Please login again.');
+              icp.logout();
+            }
+          }, 1000);
+        },
+        async init(){
+          this.id = qp('id');
+          if(!icp.state.token){ window.location='/static/pages/admin.html'; return; }
+          this.startTimer();
+          try{
+            const me = await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+icp.state.token}}).then(r=>r.json());
+            if(!(me.role==='admin'||me.role==='super_admin')){ window.location='/static/pages/admin.html'; return; }
+          }catch(e){ window.location='/static/pages/admin.html'; return; }
+          if(!this.id){ Swal.fire({icon:'error', title:'Missing resume id'}); return; }
+          const r = await fetch('/api/admin/resumes/'+this.id, {headers:{'Authorization':'Bearer '+icp.state.token}});
+          if(r.status===401){ window.location='/static/pages/admin.html'; return; }
+          this.detail = await r.json();
+          try{
+            const fr = await fetch('/api/admin/resumes/'+this.id+'/file', {headers:{'Authorization':'Bearer '+icp.state.token}});
+            if(fr.ok){
+              const blob = await fr.blob();
+              this.fileUrl = URL.createObjectURL(blob);
+              window.addEventListener('beforeunload', ()=>{ try{ URL.revokeObjectURL(this.fileUrl);}catch(e){} });
+            } else {
+              if(fr.status===404){
+                this.errorMsg = 'No file available for this resume.';
+                return;
+              }
+              this.fileUrl = '/api/admin/resumes/'+this.id+'/file_open?token='+encodeURIComponent(icp.state.token);
+            }
+          }catch(e){
+            this.fileUrl = '/api/admin/resumes/'+this.id+'/file_open?token='+encodeURIComponent(icp.state.token);
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>

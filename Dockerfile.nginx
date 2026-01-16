@@ -1,0 +1,13 @@
+# Use Nginx image to serve static files and proxy API
+FROM nginx:alpine
+
+# Copy custom nginx configuration
+COPY nginx_config_sample.conf /etc/nginx/conf.d/default.conf
+
+# Copy frontend files to the location expected by Nginx
+COPY frontend/static /var/www/fyp/frontend/static
+
+# Expose port 80
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard</title>
+  <script>
+    if (!localStorage.getItem("token") || localStorage.getItem("token") === "undefined" || localStorage.getItem("token") === "null") {
+      try {
+        localStorage.removeItem('resume_feedback');
+        localStorage.removeItem('resume_filename');
+        localStorage.removeItem('target_job_title');
+      } catch(e) {}
+      window.location.href = '/static/pages/login.html';
+    }
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+   logged: !!icp.state.token,
+   isAdmin: false,
+   sessionTime: 0,
+   timerId: null,
+    formatTime(seconds) {
+      if (isNaN(seconds) || seconds === null || seconds === undefined) return '0:00';
+      const totalSeconds = Math.max(0, Math.floor(seconds));
+      const m = Math.floor(totalSeconds / 60);
+      const s = totalSeconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    },
+   checkAdmin() {
+     if (!this.logged) return;
+     fetch('/api/auth/me', {
+       headers: { 'Authorization': 'Bearer ' + icp.state.token }
+     })
+     .then(r => r.json())
+     .then(me => {
+       this.isAdmin = me.role === 'admin' || me.role === 'super_admin';
+     })
+     .catch(() => { this.isAdmin = false; });
+   },
+   startTimer() {
+     if (this.timerId) return;
+     
+     const token = icp.state.token;
+     if (!token) return;
+
+     const payload = icp.decodeToken(token);
+     if (!payload || !payload.exp) return;
+     
+     const exp = payload.exp;
+     localStorage.setItem('session_expiry_user', exp);
+     
+     const now = Math.floor(Date.now() / 1000);
+     this.sessionTime = Math.max(0, exp - now);
+
+     this.timerId = setInterval(() => {
+       if (this.sessionTime > 0) {
+         this.sessionTime--;
+       } else {
+         clearInterval(this.timerId);
+         this.timerId = null;
+         localStorage.removeItem('session_expiry_user');
+         alert('Your session has expired. Please login again.');
+         icp.logout();
+       }
+     }, 1000);
+   },
+   init() {
+     if (this.logged) {
+       this.startTimer();
+       this.checkAdmin();
+     }
+   }
+ }" @auth:changed.window="logged = !!icp.state.token; if(logged) { startTimer(); checkAdmin(); }" class="auth-page">
+  <!-- Page Loader -->
+  <div id="global-loader" class="page-loader">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Preparing Dashboard...</div>
+  </div>
+
+   <!-- Session Timer Display - Only show when 1 minute left -->
+   <div class="session-timer-badge" x-show="logged && sessionTime > 0 && sessionTime <= 60" x-transition x-cloak>
+     <i class="bi bi-clock-history" :class="sessionTime <= 30 ? 'timer-critical' : ''"></i>
+     <span>Session: <span x-text="formatTime(sessionTime)"></span></span>
+     <span class="ms-2 small text-warning" x-show="sessionTime <= 60 && sessionTime > 58">Time is running out!</span>
+   </div>
+  <nav class="navbar navbar-dark glass-nav">
+    <div class="container d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center gap-3">
+        <a class="navbar-brand fw-bold fs-4 mb-0 me-0" href="/">
+          <span class="text-primary">I</span>CP
+        </a>
+        <div class="d-flex gap-1">
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/history.html" title="View History">
+            <i class="bi bi-clock-history d-md-none"></i>
+            <span class="d-none d-md-inline">View History</span>
+          </a>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/interview.html" title="New Interview">
+            <i class="bi bi-play-circle d-md-none"></i>
+            <span class="d-none d-md-inline">New Interview</span>
+          </a>
+          <template x-if="isAdmin">
+            <a class="btn btn-outline-warning btn-sm px-2 d-none d-lg-inline-block" href="/static/pages/admin.html" title="Admin Portal">
+              <i class="bi bi-shield-lock"></i>
+              <span>Admin Portal</span>
+            </a>
+          </template>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-outline-danger btn-sm px-2" onclick="icp.logout()" x-show="logged" title="Logout">
+          <i class="bi bi-box-arrow-right d-md-none"></i>
+          <span class="d-none d-md-inline">Logout</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+  <div id="dashboardApp" class="container py-4" x-data="{
+    isLoading: true,
+    feedback:null, 
+    uploading:false, 
+    hasHistory:false, 
+    fileName:'', 
+    resumeAttempts: 0, 
+    maxResumeAttempts: 5,
+    persistedFileName: '',
+    async initDashboard() {
+      // Load local data immediately
+      try { 
+        const stored = localStorage.getItem('resume_feedback'); 
+        if(stored){ this.feedback = JSON.parse(stored); } 
+        this.persistedFileName = localStorage.getItem('resume_filename') || '';
+      } catch(e) { console.error('Error loading local data:', e); } 
+
+      // Safety timeout: ensure loader disappears after 5 seconds max
+      const timeoutId = setTimeout(() => {
+        if (this.isLoading) {
+          console.warn('Dashboard loading timed out, clearing loader.');
+          this.isLoading = false;
+        }
+      }, 5000);
+
+      try {
+        // Fetch history and limits in parallel for better performance
+        await Promise.allSettled([
+          (async () => {
+            try { 
+              const r = await fetch('/api/interview/history',{headers:{'Authorization':'Bearer '+localStorage.getItem('token')}}); 
+              if(r.status===200){ 
+                const j = await r.json(); 
+                this.hasHistory = Array.isArray(j) && j.length>0; 
+              } 
+            } catch(e) { console.error('Error fetching history:', e); }
+          })(),
+          (async () => {
+            try { 
+              const r = await fetch('/api/resume/limits',{headers:{'Authorization':'Bearer '+localStorage.getItem('token')}}); 
+              if(r.status===200){ 
+                const j = await r.json(); 
+                this.resumeAttempts = j.remaining; 
+                this.maxResumeAttempts = j.limit; 
+              } 
+            } catch(e) { console.error('Error fetching limits:', e); }
+          })()
+        ]);
+      } finally {
+        clearTimeout(timeoutId);
+        // Ensure loader stays for at least 500ms to prevent flicker and satisfy user request for a loading screen
+        setTimeout(() => { this.isLoading = false; }, 500);
+      }
+    },
+    exportToPDF() {
+       const { jsPDF } = window.jspdf;
+       const doc = new jsPDF();
+       
+       // Title
+       doc.setFontSize(22);
+       doc.setTextColor(37, 99, 235); // Primary Blue
+       doc.text('Resume Analysis Report', 20, 20);
+       
+       // Metadata
+       doc.setFontSize(10);
+       doc.setTextColor(100, 116, 139); // Slate-500
+       const date = new Date().toLocaleDateString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' });
+       const job = localStorage.getItem('target_job_title') || 'Not specified';
+       doc.text(`Date: ${date}`, 20, 30);
+       doc.text(`Target Role: ${job}`, 20, 35);
+       doc.text(`Score: ${this.feedback.Score}/100`, 20, 40);
+       
+       let yPos = 55;
+       
+       // Sections
+       const drawSection = (title, items, color) => {
+         doc.setFontSize(14);
+         doc.setTextColor(color[0], color[1], color[2]);
+         doc.text(title, 20, yPos);
+         yPos += 8;
+         
+         doc.setFontSize(11);
+         doc.setTextColor(51, 65, 85); // Slate-700
+         items.forEach(item => {
+           const lines = doc.splitTextToSize(`• ${item}`, 170);
+           if (yPos + (lines.length * 7) > 280) {
+             doc.addPage();
+             yPos = 20;
+           }
+           doc.text(lines, 20, yPos);
+           yPos += lines.length * 7;
+         });
+         yPos += 5;
+       };
+
+       if (this.feedback.Advantages && this.feedback.Advantages.length > 0) {
+         drawSection('Advantages', this.feedback.Advantages, [22, 163, 74]); // Green
+       }
+       
+       if (this.feedback.Disadvantages && this.feedback.Disadvantages.length > 0) {
+         drawSection('Disadvantages', this.feedback.Disadvantages, [220, 38, 38]); // Red
+       }
+       
+       if (this.feedback.Suggestions && this.feedback.Suggestions.length > 0) {
+         drawSection('Suggestions', this.feedback.Suggestions, [202, 138, 4]); // Yellow
+       }
+       
+       doc.save('Resume_Analysis_Report.pdf');
+     }
+  }" x-on:feedback:update="feedback = $event.detail" x-init="initDashboard()" @auth:changed.window="if(!icp.state.token){ feedback=null; fileName=''; persistedFileName=''; } else { initDashboard(); }">
+    <!-- Dashboard Loading Spinner -->
+    <template x-if="isLoading">
+      <div class="position-absolute top-50 start-50 translate-middle d-flex flex-column align-items-center" style="z-index: 100;">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-3 text-secondary">Fetching your profile...</p>
+      </div>
+    </template>
+
+    <div class="card p-4 mb-5 glass-card border-0 mx-auto shadow-lg dashboard-card" :class="isLoading ? 'opacity-25 pointer-events-none' : ''">
+      <div class="d-flex align-items-center justify-content-between mb-4 px-2">
+        <div class="d-flex align-items-center gap-3">
+          <div class="bg-primary bg-opacity-10 p-3 rounded-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="text-primary" viewBox="0 0 16 16">
+              <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm4.5 0a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zM4 10.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 0-1h-7a.5.5 0 0 0-.5.5zm0-3a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 0-1h-7a.5.5 0 0 0-.5.5zm0-3a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 0-1h-7a.5.5 0 0 0-.5.5z"/>
+            </svg>
+          </div>
+          <div>
+            <h5 class="mb-0 fw-bold">Resume Profile & Analysis</h5>
+            <p class="text-secondary small mb-0">Evaluate your resume and prepare for future roles</p>
+          </div>
+        </div>
+      </div>
+      
+      <form @submit.prevent="
+              const jt = document.getElementById('jobTitle').value.trim();
+              if(!jt){
+                Swal.fire('Error', 'Please enter a target job title', 'error');
+                return;
+              }
+              const fileInput = document.getElementById('resumeFile');
+              if(!fileInput.files[0]){
+                Swal.fire('Error', 'Please select a resume file', 'error');
+                return;
+              }
+              
+              Swal.fire({
+                title: 'Analyzing Resume...',
+                text: 'Please wait while our AI evaluates your profile for the ' + jt + ' position.',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading() }
+              });
+
+              const fd = new FormData();
+              fd.append('file', fileInput.files[0]);
+              fd.append('job_title', jt);
+              fd.append('consent', document.getElementById('consent').checked);
+
+              fetch('/api/resume/upload', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                body: fd
+              })
+              .then(async r => {
+                const res = await r.json();
+                if (r.ok) {
+                  Swal.close();
+                  persistedFileName = fileInput.files[0].name;
+                  localStorage.setItem('resume_filename', persistedFileName);
+                  fileName = '';
+                  fileInput.value = '';
+                  
+                  if (res && res.feedback) {
+                    feedback = res.feedback;
+                    localStorage.setItem('resume_feedback', JSON.stringify(res.feedback));
+                    localStorage.setItem('target_job_title', jt);
+                    resumeAttempts = Math.max(0, resumeAttempts - 1);
+                    
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Analysis Complete',
+                      text: 'Your profile has been successfully analyzed!',
+                      timer: 2000,
+                      showConfirmButton: false
+                    });
+                  } else {
+                    throw new Error('Invalid response from server');
+                  }
+                } else {
+                  throw new Error(res.detail || 'Upload failed');
+                }
+              })
+              .catch(err => {
+                Swal.close();
+                Swal.fire('Error', err.message || 'Failed to analyze resume', 'error');
+                console.error('Upload error:', err);
+              });
+            ">
+        <div class="mb-4">
+          <label for="jobTitle" class="form-label fw-bold small text-secondary">Target Job Title</label>
+          <input type="text" id="jobTitle" name="job_title" class="form-control py-2 rounded-3" placeholder="e.g. Software Engineer, Marketing Manager..." required>
+        </div>
+        <div class="upload-zone mb-4 p-4 rounded-4 text-center cursor-pointer position-relative d-flex flex-column align-items-center justify-content-center border-2 border-dashed upload-zone-area"
+             @click="$refs.fileInput.click()">
+          <input type="file" x-ref="fileInput" id="resumeFile" name="file" accept=".pdf,.docx,.doc" class="d-none" required title="Upload your resume (PDF, DOCX, DOC)" placeholder="Choose resume file"
+                 @change="fileName = $event.target.files[0] ? $event.target.files[0].name : ''">
+          <div x-show="!fileName && !persistedFileName" class="animate-fade-in">
+            <div class="mb-3">
+              <div class="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                  <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                </svg>
+              </div>
+              <h6 class="fw-bold mb-1">Click to upload your resume</h6>
+              <p class="text-secondary small mb-1">Supported formats: PDF, DOCX, DOC (Max 5MB)</p>
+              <p class="text-warning small mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                <span x-text="resumeAttempts"></span> of <span x-text="maxResumeAttempts"></span> attempts remaining today
+                <br>
+                <span class="text-white-50 reset-info-text">Resets at 00:00 Malaysia Time (GMT+8)</span>
+              </p>
+            </div>
+          </div>
+
+          <div x-show="fileName || persistedFileName" class="animate-fade-in w-100 px-3">
+            <div class="p-3 rounded-3 bg-primary bg-opacity-10 border border-primary border-opacity-25 d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-3">
+                <div class="bg-primary p-2 rounded text-white">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z"/>
+                  </svg>
+                </div>
+                <div class="text-start">
+                  <p class="mb-0 fw-bold text-primary text-truncate file-name-text" x-text="fileName || persistedFileName"></p>
+                  <p class="mb-0 text-secondary file-ready-text">File ready for analysis</p>
+                </div>
+              </div>
+              <button type="button" class="btn btn-link text-danger p-0 border-0" title="Remove file" @click.stop="fileName = ''; persistedFileName = ''; $refs.fileInput.value = ''">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-check mb-4 custom-checkbox d-flex align-items-center gap-2">
+          <input class="form-check-input cursor-pointer" type="checkbox" name="consent" value="true" id="consent">
+          <label class="form-check-label text-secondary small cursor-pointer mb-0" for="consent">
+            I consent to store my resume for review. (Optional)
+          </label>
+          <div class="info-popover-wrapper" x-data="{ open: false }">
+            <i class="bi bi-info-circle info-btn" 
+               @click="open = !open" 
+               @click.away="open = false"></i>
+            <div x-show="open" class="info-tooltip-classic">
+              By checking this, your resume is securely stored in our system to provide accurate analysis and improve future mock interview questions.
+            </div>
+          </div>
+        </div>
+
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary fw-bold py-3 rounded-3 shadow-sm transition-all hover:scale-[1.02]">
+            Analyze Resume & Prepare
+          </button>
+        </div>
+      </form>
+    </div>
+    
+    <div class="row g-4" x-show="feedback">
+      <div class="col-12 text-center mb-4 animate-fade-in">
+        <h2 class="fw-extrabold text-white mb-2 feedback-header">Analysis Result</h2>
+        <div class="d-inline-block px-3 py-1 rounded-pill bg-primary bg-opacity-10 border border-primary border-opacity-25 mb-3">
+           <p class="fw-medium mb-0 small feedback-subtitle">Comprehensive review of your professional profile</p>
+         </div>
+         <div>
+            <button class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2 px-4 py-2 rounded-3 shadow-sm" @click="exportToPDF()">
+              <i class="bi bi-file-earmark-pdf"></i>
+              <span class="fw-bold">Export PDF Report</span>
+            </button>
+         </div>
+      </div>
+
+      <!-- Score Circle -->
+      <div class="col-12 text-center">
+        <div class="score-circle" :style="'--score: ' + (feedback ? feedback.Score : 0) + '%'">
+          <div class="score-content">
+            <span class="score-value" x-text="feedback ? feedback.Score : 0"></span>
+            <span class="score-label">Score</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advantages -->
+      <div class="col-md-6">
+        <div class="card p-4 h-100">
+          <h5 class="text-success mb-3">Advantages</h5>
+          <ul class="list-unstyled mb-0">
+            <template x-for="a in feedback.Advantages">
+              <li class="mb-2 d-flex align-items-start">
+                <span class="text-success me-2">✔</span>
+                <span x-text="a"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Disadvantages -->
+      <div class="col-md-6">
+        <div class="card p-4 h-100">
+          <h5 class="text-danger mb-3">Disadvantages</h5>
+          <ul class="list-unstyled mb-0">
+            <template x-for="d in feedback.Disadvantages">
+              <li class="mb-2 d-flex align-items-start">
+                <span class="text-danger me-2">✖</span>
+                <span x-text="d"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Suggestions -->
+      <div class="col-12">
+        <div class="card p-4">
+          <h5 class="text-warning mb-3">Suggestions</h5>
+          <ul class="list-unstyled mb-0">
+            <template x-for="s in feedback.Suggestions">
+              <li class="mb-2 d-flex align-items-start">
+                <span class="text-warning me-2">💡</span>
+                <span x-text="s"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="mt-4 text-center" x-show="feedback">
+      <a class="btn btn-lg btn-success px-5" href="/static/pages/interview.html">Enter Interview Room</a>
+    </div>
+  </div>
+</body>
+</html>

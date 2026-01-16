@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login</title>
+  <script>
+    // Ensure old session data is cleared when reaching login page
+    try {
+      localStorage.removeItem('resume_feedback');
+      localStorage.removeItem('resume_filename');
+      localStorage.removeItem('target_job_title');
+      localStorage.removeItem('interview_voice_gender');
+    } catch(e) {}
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/js/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script src="/static/js/email_service.js"></script>
+</head>
+<body class="auth-page" x-data="{logged: !!icp.state.token}" @auth:changed.window="logged = !!icp.state.token">
+  <nav class="navbar navbar-dark glass-nav">
+    <div class="container d-flex align-items-center">
+      <div class="d-flex align-items-center gap-3">
+        <a class="navbar-brand fw-bold fs-4 mb-0 me-0" href="/">
+          <span class="text-primary">I</span>CP
+        </a>
+        <a class="btn btn-outline-light btn-sm px-3" href="/static/pages/register.html">Register</a>
+      </div>
+    </div>
+  </nav>
+  <div class="container py-5">
+    <div class="row justify-content-center">
+      <div class="col-md-5">
+        <div class="auth-card p-4 p-md-5 animate-fade-in">
+          <h2 class="auth-header mb-4">Welcome Back</h2>
+          <div id="auth-msg"></div>
+          <form hx-post="/api/auth/login" hx-trigger="submit" hx-swap="none"
+                hx-headers='{"Authorization": ""}'
+                hx-on::before-request="
+                  Swal.fire({
+                    title: 'Logging in...',
+                    text: 'Verifying credentials',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                  });
+                "
+                hx-on::after-request="
+                  if(event.detail.successful){
+                    const res = JSON.parse(event.detail.xhr.response);
+                    icp.state.setToken(res.access_token);
+                    fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+icp.state.token}})
+                      .then(r=>r.json())
+                      .then(me=>{
+                        if(me.role==='user'){
+                          Swal.fire({
+                            icon: 'success',
+                            title: 'Login Successful!',
+                            text: 'Redirecting to dashboard...',
+                            timer: 1500,
+                            showConfirmButton: false
+                          }).then(() => {
+                            window.location='/static/pages/dashboard.html';
+                          });
+                        } else {
+                          icp.state.clearToken();
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Access Denied',
+                            text: 'Admin or super_admin cannot use the normal login. Please use the Admin page.',
+                          }).then(()=>{ window.location='/static/pages/admin.html'; });
+                        }
+                      });
+                  } else {
+                    let msg = 'Invalid credentials';
+                    let showVerifyLink = false;
+                    try {
+                      const res = JSON.parse(event.detail.xhr.response);
+                      msg = res.detail || msg;
+                      if (msg.toLowerCase().includes('verify your email')) {
+                        showVerifyLink = true;
+                      }
+                    } catch(e){}
+
+                    if (showVerifyLink) {
+                      const email = document.querySelector('[name=username]').value;
+                      Swal.fire({
+                        icon: 'warning',
+                        title: 'Email Not Verified',
+                        text: msg,
+                        showCancelButton: true,
+                        confirmButtonText: 'Verify Now',
+                        cancelButtonText: 'Close',
+                        confirmButtonColor: '#0d6efd'
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          window.location = '/static/pages/verify.html?email=' + encodeURIComponent(email);
+                        }
+                      });
+                    } else {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'Login Failed',
+                        text: msg
+                      });
+                    }
+                  }
+                ">
+            <div class="mb-4">
+              <label class="form-label text-secondary small text-uppercase fw-bold">Email Address</label>
+              <input name="username" type="email" class="form-control form-control-lg" required placeholder="name@example.com">
+            </div>
+            <div class="mb-4">
+              <label class="form-label text-secondary small text-uppercase fw-bold">Password</label>
+              <div class="input-group input-group-lg" x-data="{show: false}">
+                <input name="password" :type="show ? 'text' : 'password'" class="form-control" required placeholder="Enter your password">
+                <button class="btn password-toggle-btn" type="button" @click="show = !show" title="Toggle password visibility">
+                  <svg x-show="!show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-eye" viewBox="0 0 16 16">
+                    <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/>
+                    <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/>
+                  </svg>
+                  <svg x-show="show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-eye-slash eye-slash-icon" viewBox="0 0 16 16">
+                    <path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7 7 0 0 0-2.79.588l.77.771A6 6 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755q-.247.248-.517.486z"/>
+                    <path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829zm-2.943 1.299.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829"/>
+                    <path d="M3.35 5.47q-.27.24-.518.487A13 13 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7 7 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709zm10.296 8.884-12-12 .708-.708 12 12z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">Sign In</button>
+            <div class="mt-4 text-center">
+              <span class="text-secondary small">Don't have an account?</span>
+              <a href="/static/pages/register.html" class="auth-footer-link text-primary text-decoration-none fw-bold ms-1">Create Account</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

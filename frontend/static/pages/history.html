@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>History</title>
+  <script>
+    if (!localStorage.getItem("token") || localStorage.getItem("token") === "undefined" || localStorage.getItem("token") === "null") {
+      window.location.href = '/static/pages/login.html';
+    }
+  </script><title>History</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+     logged: !!icp.state.token,
+     isAdmin: false,
+     sessionTime: 0,
+     timerId: null,
+    formatTime(seconds) {
+       if (isNaN(seconds) || seconds === null || seconds === undefined) return '0:00';
+       const totalSeconds = Math.max(0, Math.floor(seconds));
+       const m = Math.floor(totalSeconds / 60);
+       const s = totalSeconds % 60;
+       return `${m}:${s.toString().padStart(2, '0')}`;
+     },
+    checkAdmin() {
+      if (!this.logged) return;
+      fetch('/api/auth/me', {
+        headers: { 'Authorization': 'Bearer ' + icp.state.token }
+      })
+      .then(r => r.json())
+      .then(me => {
+        this.isAdmin = me.role === 'admin' || me.role === 'super_admin';
+      })
+      .catch(() => { this.isAdmin = false; });
+    },
+    startTimer() {
+      if (this.timerId) return;
+      const token = icp.state.token;
+      if (!token) return;
+      const payload = icp.decodeToken(token);
+      if (!payload || !payload.exp) return;
+      const exp = payload.exp;
+      localStorage.setItem('session_expiry_user', exp);
+      const now = Math.floor(Date.now() / 1000);
+      this.sessionTime = Math.max(0, exp - now);
+      this.timerId = setInterval(() => {
+        if (this.sessionTime > 0) {
+          this.sessionTime--;
+        } else {
+          clearInterval(this.timerId);
+          this.timerId = null;
+          localStorage.removeItem('session_expiry_user');
+          alert('Your session has expired. Please login again.');
+          icp.logout();
+        }
+      }, 1000);
+    },
+    init() {
+      if (this.logged) {
+        this.startTimer();
+        this.checkAdmin();
+      }
+    }
+  }" @auth:changed.window="logged = !!icp.state.token; if(logged) { startTimer(); checkAdmin(); }" class="auth-page">
+  <!-- Page Loader -->
+  <div id="global-loader" class="page-loader">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Loading History...</div>
+  </div>
+  <nav class="navbar navbar-dark glass-nav">
+    <div class="container d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center gap-2">
+        <a class="navbar-brand fw-bold fs-4 mb-0 me-0" href="/">
+          <span class="text-primary">I</span>CP
+        </a>
+        <div class="d-flex gap-1">
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/dashboard.html" title="Dashboard">
+            <i class="bi bi-speedometer2 d-md-none"></i>
+            <span class="d-none d-md-inline">Dashboard</span>
+          </a>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/interview.html" title="New Interview">
+            <i class="bi bi-play-circle d-md-none"></i>
+            <span class="d-none d-md-inline">New Interview</span>
+          </a>
+          <template x-if="isAdmin">
+            <a class="btn btn-outline-warning btn-sm px-2" href="/static/pages/admin.html" title="Admin Portal">
+              <i class="bi bi-shield-lock"></i>
+              <span>Admin Portal</span>
+            </a>
+          </template>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-outline-danger btn-sm px-2" onclick="icp.logout()" x-show="logged" title="Logout">
+          <i class="bi bi-box-arrow-right d-md-none"></i>
+          <span class="d-none d-md-inline">Logout</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Session Timer Display - Only show when 1 minute left -->
+   <div class="session-timer-badge" x-show="logged && sessionTime > 0 && sessionTime <= 60" x-transition x-cloak>
+    <i class="bi bi-clock-history" :class="sessionTime <= 30 ? 'timer-critical' : ''"></i>
+    <span>Session: <span x-text="formatTime(sessionTime)"></span></span>
+    <span class="ms-2 small text-warning" x-show="sessionTime <= 60 && sessionTime > 58">Time is running out!</span>
+  </div>
+  <div class="container py-5">
+    <div class="text-center mb-5">
+      <h2 class="fw-bold mb-2">Interview History</h2>
+      <p class="text-secondary">Track your progress and review previous sessions</p>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="row mb-4 justify-content-end">
+      <div class="col-md-3">
+        <div class="input-group glass-card overflow-hidden history-filter-group">
+          <span class="input-group-text bg-transparent border-0 text-secondary ps-3">
+            <i class="bi bi-sort-down"></i>
+          </span>
+          <select id="sortFilter" class="form-select bg-transparent border-0 text-white py-2 history-sort-select" title="Sort interview history">
+            <option value="desc" class="bg-dark">Latest First</option>
+            <option value="asc" class="bg-dark">Oldest First</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="list" class="row g-4"></div>
+  </div>
+  <script>
+    function toMalaysiaTime(utcString) {
+      if (!utcString) return 'Unknown';
+      const date = new Date(utcString);
+      return new Intl.DateTimeFormat('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(date);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = icp.state.token;
+      const list = document.getElementById('list');
+      const sortFilter = document.getElementById('sortFilter');
+      let allItems = [];
+
+      function renderItems(items) {
+        list.innerHTML = '';
+        if (!items || items.length === 0) {
+          list.innerHTML = `
+            <div class="col-12">
+              <div class="card glass-card border-0 p-5 text-center">
+                <div class="bg-primary bg-opacity-10 p-4 rounded-circle d-inline-block mb-4 mx-auto">
+                  <i class="bi bi-clock-history fs-1 text-primary"></i>
+                </div>
+                <h4 class="fw-bold mb-2">No interviews yet</h4>
+                <p class="text-secondary mb-4">You haven't participated in any interview sessions yet.</p>
+                <a class="btn btn-primary btn-lg px-5 rounded-3" href="/static/pages/interview.html">Start First Interview</a>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        items.forEach((it) => {
+          const created = toMalaysiaTime(it.created_at);
+          const ended = it.ended_at ? toMalaysiaTime(it.ended_at) : null;
+          const status = ended ? 'Completed' : 'In Progress';
+          const card = document.createElement('div');
+          card.className = 'col-12';
+          card.innerHTML = `
+            <div class="card glass-card border-0 p-4 transition-all hover:translate-y-px mb-4">
+              <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                  <div class="d-flex align-items-center gap-2 mb-2">
+                    <div class="badge ${ended ? 'bg-success bg-opacity-10 text-success' : 'bg-warning bg-opacity-10 text-warning'}">${status}</div>
+                  </div>
+                  <div class="fw-bold fs-5 mb-1">${it.asked_count} Questions Asked</div>
+                  ${it.readiness_score !== null && it.readiness_score !== undefined ? `<div class="text-success small fw-bold mb-1"><i class="bi bi-graph-up-arrow me-1"></i>Readiness: ${it.readiness_score}/100</div>` : ''}
+                  <div class="text-secondary small">Started: ${created}</div>
+                  ${ended ? `<div class="text-secondary small">Ended: ${ended}</div>` : ''}
+                </div>
+                <div class="bg-dark p-3 rounded-3" style="background-color: rgba(15, 23, 42, 0.6) !important;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-primary" viewBox="0 0 16 16">
+                    <path d="M12.5 3a.5.5 0 0 1 0 1h-5a.5.5 0 0 1 0-1h5zm0 3a.5.5 0 0 1 0 1h-5a.5.5 0 0 1 0-1h5zm.5 3.5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 .5-.5zm-.5 2.5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1 0-1h5z"/>
+                    <path d="M16 2a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2zM4 1v14H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h2zm1 0h9a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5V1z"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="mt-auto d-flex flex-wrap gap-2">
+                <button class="btn btn-primary btn-sm px-3 py-2 rounded-2 view-details-btn" data-id="${it.id}">View Details</button>
+                ${ended ? `<button class="btn btn-outline-light btn-sm px-3 py-2 rounded-2" disabled>Session Ended</button>` : `<a href="/static/pages/interview.html" class="btn btn-outline-light btn-sm px-3 py-2 rounded-2">Resume Session</a>`}
+                <button class="btn btn-outline-danger btn-sm px-3 py-2 rounded-2 delete-btn" data-id="${it.id}">
+                  <i class="bi bi-trash"></i> Delete
+                </button>
+              </div>
+              <div class="mt-4 details p-3 rounded-3" style="display:none; background-color: rgba(15, 23, 42, 0.6) !important;"></div>
+            </div>
+          `;
+          list.appendChild(card);
+        });
+
+        attachHandlers();
+      }
+
+      function attachHandlers() {
+        list.querySelectorAll('button.view-details-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-id');
+            const container = btn.closest('.card').querySelector('.details');
+            if (container.style.display === 'none') {
+              btn.innerText = 'Close Details';
+              container.innerHTML = '<div class="text-secondary small"><span class="spinner-border spinner-border-sm me-2"></span>Loading details...</div>';
+              container.style.display = '';
+              try {
+                const r = await fetch('/api/interview/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
+                if (r.status === 401) { window.location.href = '/static/pages/login.html'; return; }
+                const d = await r.json();
+                const t = Array.isArray(d.transcript) ? d.transcript : [];
+                const pairs = [];
+                for (let i = 0; i < t.length; i++) {
+                  if (t[i].role === 'assistant') {
+                    const q = t[i].text;
+                    let a = '';
+                    if (i + 1 < t.length && t[i + 1].role === 'user') { a = t[i + 1].text; }
+                    pairs.push({ q, a });
+                  }
+                }
+                let html = `
+                  <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-white border-opacity-10">
+                    <div class="small fw-bold text-light text-uppercase tracking-wider">Transcript Details</div>
+                    <div class="small text-secondary">${d.asked_count} / ${d.questions_limit} Questions</div>
+                  </div>
+                  <div class="transcript-list mb-3" style="max-height: 400px; overflow-y: auto;">
+                    ${pairs.length === 0
+                      ? `<div class="text-secondary small italic">No Q/A pairs yet.</div>`
+                      : pairs.map((p, idx) => `
+                        <div class="mb-3">
+                          <div class="small fw-bold mb-1" style="color: #22d3ee;">Q${idx + 1}: ${p.q}</div>
+                          <div class="text-light small border-start border-info border-opacity-25 ps-2 ms-1">${p.a || '<span class="text-secondary italic">No response recorded</span>'}</div>
+                        </div>
+                      `).join('')
+                    }
+                  </div>
+                `;
+
+                if (d.readiness_feedback) {
+                  html += `
+                    <div class="mt-3 pt-3 border-top border-white border-opacity-10">
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <div class="small fw-bold text-success text-uppercase tracking-wider">Interview Readiness</div>
+                        ${d.readiness_score ? `<span class="badge bg-success bg-opacity-10 text-success">${d.readiness_score}/100</span>` : ''}
+                      </div>
+                      <div class="text-secondary small lh-sm" style="font-size: 0.85rem;">
+                        ${d.readiness_feedback}
+                      </div>
+                    </div>
+                  `;
+                }
+                container.innerHTML = html;
+              } catch (e) {
+                container.innerHTML = '<div class="text-danger small">Failed to load details. Please try again.</div>';
+              }
+            } else {
+              btn.innerText = 'View Details';
+              container.style.display = 'none';
+            }
+          });
+        });
+
+        list.querySelectorAll('button.delete-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-id');
+            const result = await Swal.fire({
+              title: 'Are you sure?',
+              text: "You won't be able to revert this!",
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#d33',
+              cancelButtonColor: '#3085d6',
+              confirmButtonText: 'Yes, delete it!',
+              background: '#1e293b',
+              color: '#fff'
+            });
+
+            if (result.isConfirmed) {
+              try {
+                const r = await fetch('/api/interview/' + id, {
+                  method: 'DELETE',
+                  headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (r.ok) {
+                  Swal.fire({ title: 'Deleted!', icon: 'success', background: '#1e293b', color: '#fff' });
+                  allItems = allItems.filter(it => it.id !== id);
+                  renderItems(allItems);
+                } else {
+                  const err = await r.json();
+                  Swal.fire('Error', err.detail || 'Failed to delete', 'error');
+                }
+              } catch (e) {
+                Swal.fire('Error', 'Connection error', 'error');
+              }
+            }
+          });
+        });
+      }
+
+      fetch('/api/interview/history', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.status === 401 ? [] : r.json())
+        .then(items => {
+          allItems = items || [];
+          renderItems(allItems);
+        })
+        .catch(() => {
+          list.innerHTML = `<div class="col-12"><div class="card glass-card border-0 p-5 text-center"><h6>Error loading history</h6></div></div>`;
+        });
+
+      sortFilter.addEventListener('change', () => {
+        const order = sortFilter.value;
+        const sorted = [...allItems].sort((a, b) => {
+          const dateA = new Date(a.created_at);
+          const dateB = new Date(b.created_at);
+          return order === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+        renderItems(sorted);
+      });
+    });
+  </script>
+</body>
+</html>

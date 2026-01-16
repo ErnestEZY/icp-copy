@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Panel</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/js/app.js"></script>
+</head>
+<body x-data="panel()" x-init="init()" @auth:changed.window="logged = !!icp.state.token; if(logged) startTimer();">
+  <!-- Page Loader -->
+  <div id="global-loader" class="page-loader">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Loading Admin Portal...</div>
+  </div>
+  <nav class="navbar navbar-dark glass-nav">
+    <div class="container d-flex align-items-center">
+      <div class="d-flex align-items-center gap-3">
+        <a class="navbar-brand" href="/">ICP Admin</a>
+        <a class="btn btn-outline-warning btn-sm" href="/static/pages/admin.html" x-show="!icp.state.token">Admin Login</a>
+      </div>
+      <div class="ms-auto">
+        <button class="btn btn-outline-danger btn-sm" onclick="icp.logout()" x-show="!!icp.state.token">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Admin Session Timer Display - Only show when 1 minute left -->
+  <div class="session-timer-badge" x-show="logged && sessionTime > 0 && sessionTime <= 60" x-transition x-cloak>
+    <i class="bi bi-shield-lock" :class="sessionTime <= 30 ? 'timer-critical' : ''"></i>
+    <span>Admin Session: <span x-text="formatTime(sessionTime)"></span></span>
+    <span class="ms-2 small text-warning" x-show="sessionTime <= 60 && sessionTime > 58">Time is running out!</span>
+  </div>
+  <div class="container py-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <h2 class="text-warning fw-bold mb-0">Candidate Resume Management</h2>
+      <div class="badge bg-warning text-dark px-3 py-2 shadow-sm">Administrator Portal</div>
+    </div>
+    
+    <div class="card p-3 mb-3">
+      <div class="row g-2">
+        <div class="col-md-3"><input class="form-control" placeholder="Search filename" x-model="q"></div>
+        <div class="col-md-3">
+          <select class="form-select" x-model="status" title="Filter by status">
+            <option value="">Any status</option>
+            <option>pending</option>
+            <option>approved</option>
+            <option>rejected</option>
+          </select>
+        </div>
+        <div class="col-md-3"><input class="form-control" placeholder="Tag" x-model="tag"></div>
+        <div class="col-md-3"><button class="btn btn-primary w-100" @click="load()">Filter</button></div>
+      </div>
+    </div>
+
+    <div class="card p-3" x-show="items.length">
+      <div class="table-responsive">
+        <table class="table table-dark table-striped align-middle admin-table-fixed">
+          <thead>
+            <tr>
+              <th class="admin-filename-column">Filename</th>
+              <th class="admin-status-column">Status</th>
+              <th class="admin-tags-column">Tags</th>
+              <th class="admin-created-column">Created (MYT)</th>
+              <th class="admin-notes-column">Notes</th>
+              <th class="admin-actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="list-body"></tbody>
+        </table>
+      </div>
+      <!-- Pagination Controls -->
+      <div class="d-flex flex-column align-items-center mt-3" x-show="totalPages > 1">
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-outline-light btn-sm px-2" @click="prevPage()" :disabled="page <= 1" title="Previous page">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-chevron-left" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
+            </svg>
+          </button>
+          <span class="small text-nowrap">Page</span>
+          <input type="number" class="form-control text-center pagination-input"
+                 :value="page" @change="goToPage($event.target.value)" min="1" :max="totalPages" title="Current page">
+          <span class="small text-nowrap">of <span x-text="totalPages"></span></span>
+          <button class="btn btn-outline-light btn-sm px-2" @click="nextPage()" :disabled="page >= totalPages" title="Next page">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-chevron-right" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="small text-secondary mt-1">
+          Showing <span x-text="((page-1)*perPage)+1"></span>-<span x-text="Math.min(page*perPage, items.length)"></span> of <span x-text="items.length"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card p-4 text-center" x-show="!items.length">
+      <h6 class="mb-2">No resumes found</h6>
+      <p class="mb-0">Try adjusting your filters or ask users to consent to store resumes.</p>
+    </div>
+    <div x-show="detail" class="card p-4 mt-4 shadow-lg border-warning border-opacity-25 animate-fade-in" x-cloak>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="bg-warning bg-opacity-10 p-2 rounded">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-warning" viewBox="0 0 16 16">
+              <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM11 8H5V7h6v1zm0-2H5V5h6v1zm-6 3h6v1H5V9zm0 2h6v1H5v-1z"/>
+            </svg>
+          </div>
+          <h5 class="mb-0 fw-bold" x-text="detail && detail.filename ? detail.filename : '(missing)'"></h5>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <select class="form-select admin-status-select-modern" 
+                  x-model="detail.status" 
+                  title="Change status">
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <button class="btn btn-primary px-3" @click="save()">
+            <i class="bi bi-check-lg me-1"></i> Save
+          </button>
+          <button class="btn btn-outline-light" @click="detail = null">Close</button>
+        </div>
+      </div>
+      <hr class="border-secondary opacity-25">
+      <div class="mt-3">
+        <h6>Text Preview</h6>
+        <pre class="bg-dark p-3 admin-text-preview" x-text="detail && detail.text ? detail.text : ''"></pre>
+      </div>
+      <div class="mt-3">
+        <h6>Comment / Notes</h6>
+        <textarea class="form-control admin-notes-textarea" rows="6" x-model="detail.notes" placeholder="Add a comment..."></textarea>
+      </div>
+      <div class="mt-3">
+        <h6>Tags</h6>
+        <input class="form-control" x-model="tagsInput" placeholder="comma,separated,tags">
+      </div>
+    </div>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+    function panel(){
+      return {
+        logged: !!icp.state.token,
+        q:'', status:'', tag:'', items:[], detail:null, tagsInput:'',
+        page: 1, perPage: 5,
+        sessionTime: 0,
+        timerId: null,
+        formatTime(seconds) {
+          if (isNaN(seconds) || seconds === null || seconds === undefined) return '0:00';
+          const totalSeconds = Math.max(0, Math.floor(seconds));
+          const m = Math.floor(totalSeconds / 60);
+          const s = totalSeconds % 60;
+          return `${m}:${s.toString().padStart(2, '0')}`;
+        },
+        startTimer() {
+          if (this.timerId) return;
+          
+          const token = icp.state.token;
+          if (!token) return;
+
+          const payload = icp.decodeToken(token);
+          if (!payload || !payload.exp) return;
+          
+          const exp = payload.exp;
+          localStorage.setItem('session_expiry_admin', exp);
+          
+          const now = Math.floor(Date.now() / 1000);
+          this.sessionTime = Math.max(0, exp - now);
+
+          this.timerId = setInterval(() => {
+            if (this.sessionTime > 0) {
+              this.sessionTime--;
+            } else {
+              clearInterval(this.timerId);
+              this.timerId = null;
+              localStorage.removeItem('session_expiry_admin');
+              alert('Admin session has expired. Please login again.');
+              icp.logout();
+            }
+          }, 1000);
+        },
+        get totalPages(){ return Math.ceil(this.items.length / this.perPage) || 1 },
+        get paginatedItems(){
+          const start = (this.page - 1) * this.perPage;
+          return this.items.slice(start, start + this.perPage);
+        },
+        nextPage(){ if(this.page < this.totalPages) { this.page++; this.renderList(); } },
+        prevPage(){ if(this.page > 1) { this.page--; this.renderList(); } },
+        goToPage(p){
+          const n = parseInt(p);
+          if(n > 0 && n <= this.totalPages) { this.page = n; this.renderList(); }
+          else { this.renderList(); } // Reset input
+        },
+        escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])) },
+        renderList(){
+          const tbody = document.getElementById('list-body');
+          if(!tbody) return;
+          const rows = (this.paginatedItems||[]).map(it=>{
+            const name = this.escapeHtml(it.filename || it.name || '(missing)');
+            const status = this.escapeHtml(it.status || 'pending');
+            const created = it.created_at ? new Date(it.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) : '';
+            const tags = Array.isArray(it.tags) && it.tags.length
+              ? it.tags.map(t=>`<span class="badge bg-primary me-1">${this.escapeHtml(t)}</span>`).join('')
+              : '<span class="text-secondary">—</span>';
+            const statusClass = (it.status||'pending')==='approved' ? 'bg-success' : (it.status==='rejected' ? 'bg-danger' : 'bg-warning');
+            const nameHtml = it.file_available ? `<a href="/static/pages/admin_file_preview.html?id=${this.escapeHtml(it.id)}" class="text-warning">${name}</a>` : name;
+            const noteVal = this.escapeHtml(it.notes || '');
+            const viewBtn = ( (it.status||'pending')==='approved' && it.file_available )
+              ? `<button class="btn btn-outline-warning btn-sm ms-1 view-btn" data-id="${this.escapeHtml(it.id)}">View</button>`
+              : '';
+            return `
+              <tr>
+                <td>${nameHtml}</td>
+                <td><span class="badge ${statusClass}">${status}</span></td>
+                <td>
+                  <div class="admin-tags-container">
+                    ${tags}
+                  </div>
+                </td>
+                <td>${created}</td>
+                <td class="admin-notes-cell">
+                  <textarea rows="5" class="form-control admin-notes-textarea" placeholder="No notes" readonly>${noteVal}</textarea>
+                </td>
+                <td>
+                  <button class="btn btn-outline-light btn-sm detail-btn" data-id="${this.escapeHtml(it.id)}">Details</button>
+                  ${viewBtn}
+                </td>
+              </tr>`;
+          }).join('');
+          tbody.innerHTML = rows;
+          tbody.querySelectorAll('.detail-btn').forEach(btn=>{
+            btn.addEventListener('click', ()=> this.open(btn.getAttribute('data-id')));
+          });
+          tbody.querySelectorAll('.view-btn').forEach(btn=>{
+            btn.addEventListener('click', ()=>{
+              const id = btn.getAttribute('data-id');
+              const url = '/static/pages/admin_file_preview.html?id='+encodeURIComponent(id);
+              const w = window.open(url, '_blank');
+              if(!w){ Swal.fire({icon:'error', title:'Popup blocked', text:'Please allow popups to view files'}); }
+            });
+          });
+        },
+        async init(){
+          if(!icp.state.token){ window.location='/static/pages/admin.html'; return; }
+          this.startTimer();
+          try{
+            const me = await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+icp.state.token}}).then(r=>r.json());
+            if(!(me.role==='admin'||me.role==='super_admin')){ window.location='/static/pages/admin.html'; return; }
+          }catch(e){
+            window.location='/static/pages/admin.html'; return;
+          }
+          this.load();
+        },
+        load(){
+          const u = new URL('/api/admin/resumes', window.location.origin);
+          if(this.q) u.searchParams.set('q', this.q);
+          if(this.status) u.searchParams.set('status', this.status);
+          if(this.tag) u.searchParams.set('tag', this.tag);
+          fetch(u, {headers:{'Authorization':'Bearer '+icp.state.token}})
+            .then(r=>{
+              if(r.status===401) return [];
+              if(r.status===403) { Swal.fire({icon:'error', title:'Forbidden', text:'Admin privileges required'}); return []; }
+              return r.json();
+            })
+            .then(j=>{
+              const arr = Array.isArray(j) ? j : [];
+              this.items = arr.map(it=>({
+                id: it.id,
+                filename: it.filename || it.name || '',
+                status: it.status || 'pending',
+                tags: Array.isArray(it.tags) ? it.tags : [],
+                created_at: it.created_at || null,
+                file_available: !!it.file_available,
+                notes: it.notes || ''
+              }));
+              this.page = 1;
+              this.renderList();
+            });
+        },
+        open(id){
+          fetch('/api/admin/resumes/'+id, {headers:{'Authorization':'Bearer '+icp.state.token}})
+            .then(r=>{
+              if(r.status===401) return null;
+              if(r.status===403) { Swal.fire({icon:'error', title:'Forbidden', text:'Admin privileges required'}); return null; }
+              return r.json();
+            })
+            .then(j=>{
+              if(!j) return;
+              this.detail = {
+                id: j.id,
+                filename: j.filename || '',
+                status: j.status || 'pending',
+                text: j.text || '',
+                notes: j.notes || '',
+                tags: Array.isArray(j.tags) ? j.tags : [],
+                created_at: j.created_at || null,
+                file_available: !!j.file_available,
+                mime_type: j.mime_type || ''
+              };
+              this.tagsInput = (this.detail.tags||[]).join(',');
+            });
+        },
+        save(){
+          const tags = this.tagsInput.split(',').map(s=>s.trim()).filter(Boolean);
+          const params = new URLSearchParams();
+          params.set('status', this.detail.status || 'pending');
+          params.set('notes', this.detail.notes || '');
+          params.set('tags', JSON.stringify(tags));
+          const btns = document.querySelectorAll('.admin-status-select, .quick-save-btn');
+          btns.forEach(b=>b.disabled=true);
+          fetch('/api/admin/resumes/'+this.detail.id, {
+              method:'PATCH',
+              headers:{'Authorization':'Bearer '+icp.state.token, 'Content-Type':'application/x-www-form-urlencoded'},
+              body: params.toString()
+            })
+            .then(async r=>{
+              if(r.status===401) return;
+              if(!r.ok){
+                let msg = 'Save failed';
+                try{ const j = await r.json(); msg = j.detail || msg; }catch(e){}
+                Swal.fire({icon:'error', title:'Error', text: msg});
+                return;
+              }
+              Swal.fire({icon:'success', title:'Saved', timer:1000, showConfirmButton:false});
+              // Refresh detail to reflect updated fields
+              return fetch('/api/admin/resumes/'+this.detail.id, {headers:{'Authorization':'Bearer '+icp.state.token}})
+                .then(rr=>rr.json())
+                .then(j=>{
+                  this.detail.status = j.status || this.detail.status;
+                  this.detail.notes = j.notes || this.detail.notes;
+                  this.detail.tags = Array.isArray(j.tags) ? j.tags : this.detail.tags;
+                  this.tagsInput = (this.detail.tags||[]).join(',');
+                  this.load();
+                });
+            })
+            .finally(()=>{ btns.forEach(b=>b.disabled=false); });
+        }
+      }
+    }
+  </script>
+</body>
+</html>

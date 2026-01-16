@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Interview</title>
+  <script>
+    if (!localStorage.getItem("token") || localStorage.getItem("token") === "undefined" || localStorage.getItem("token") === "null") {
+      window.location.href = '/static/pages/login.html';
+    }
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/interview.js"></script>
+</head>
+<body x-data="interview()" x-init="init()" @auth:changed.window="logged = !!icp.state.token; if(logged) { startTimer(); checkAdmin(); }" class="auth-page">
+  <!-- Page Loader -->
+  <div id="global-loader" class="page-loader">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Initializing Interview...</div>
+  </div>
+  <nav class="navbar navbar-dark glass-nav">
+    <div class="container d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center gap-2">
+        <a class="navbar-brand fw-bold fs-4 mb-0 me-0" href="/">
+          <span class="text-primary">I</span>CP
+        </a>
+        <div class="d-flex gap-1">
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/dashboard.html" title="Dashboard">
+            <i class="bi bi-speedometer2 d-md-none"></i>
+            <span class="d-none d-md-inline">Dashboard</span>
+          </a>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/history.html" title="View History">
+            <i class="bi bi-clock-history d-md-none"></i>
+            <span class="d-none d-md-inline">View History</span>
+          </a>
+          <template x-if="isAdmin">
+            <a class="btn btn-outline-warning btn-sm px-2" href="/static/pages/admin.html" title="Admin Portal">
+              <i class="bi bi-shield-lock"></i>
+              <span>Admin Portal</span>
+            </a>
+          </template>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-outline-danger btn-sm px-2" onclick="icp.logout()" @click="icp.logout()" x-show="logged" title="Logout">
+          <i class="bi bi-box-arrow-right d-md-none"></i>
+          <span class="d-none d-md-inline">Logout</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Session Timer Display - Only show when 1 minute left -->
+   <div class="session-timer-badge" x-show="logged && sessionTime > 0 && sessionTime <= 60" x-transition x-cloak>
+    <i class="bi bi-clock-history" :class="sessionTime <= 30 ? 'timer-critical' : ''"></i>
+    <span>Session: <span x-text="formatTime(sessionTime)"></span></span>
+    <span class="ms-2 small text-warning" x-show="sessionTime <= 60 && sessionTime > 58">Time is running out!</span>
+  </div>
+  <div class="container py-4">
+    <div class="card p-4">
+      <div class="row g-4 mb-4">
+        <div class="col-md-8">
+          <div class="p-3 rounded-3 bg-dark bg-opacity-20 border border-white border-opacity-10 h-100">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <i class="bi bi-sliders2-vertical text-primary"></i>
+              <span class="small fw-bold text-uppercase tracking-wider text-secondary">Session Configuration</span>
+            </div>
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+                <div class="d-flex align-items-center gap-2 me-2">
+                  <label class="text-secondary small fw-bold">Questions:</label>
+                  <select class="form-select form-select-sm bg-dark text-light border-secondary question-limit-select" title="Choose the number of questions for this session" x-model="questionLimit" :disabled="sessionId">
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                  </select>
+                </div>
+                <div class="d-flex align-items-center gap-2 me-2">
+                  <label class="text-secondary small fw-bold">Difficulty:</label>
+                  <select class="form-select form-select-sm bg-dark text-light border-secondary difficulty-select" title="Choose the interview difficulty level" x-model="difficulty" :disabled="sessionId">
+                    <option value="Beginner">Beginner</option>
+                    <option value="Intermediate">Intermediate</option>
+                    <option value="Advanced">Advanced</option>
+                  </select>
+                </div>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-3 gap-md-4">
+                <div class="form-check form-switch custom-switch">
+                  <input class="form-check-input" type="checkbox" id="micToggle" x-model="mic" :disabled="sessionId">
+                  <label class="form-check-label text-secondary small" for="micToggle">
+                    <i class="bi bi-mic-fill me-1"></i> Use Microphone
+                  </label>
+                </div>
+
+                <div class="d-flex align-items-center gap-3">
+                  <div class="form-check form-switch custom-switch">
+                    <input class="form-check-input" type="checkbox" id="speakerToggle" x-model="speaker" :disabled="sessionId">
+                    <label class="form-check-label text-secondary small" for="speakerToggle">
+                      <i class="bi bi-volume-up-fill me-1"></i> AI Speaker
+                    </label>
+                  </div>
+
+                  <!-- Voice selection beside AI Speaker toggle -->
+                  <template x-if="speaker">
+                    <div x-transition x-cloak>
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="text-secondary small voice-label">Voice:</span>
+                        <div class="btn-group btn-group-sm" role="group">
+                          <button type="button" class="btn btn-outline-primary py-0 px-2 voice-btn" 
+                                  :class="voiceGender === 'female' ? 'active' : ''"
+                                  :disabled="sessionId"
+                                  @click="voiceGender = 'female'; localStorage.setItem('interview_voice_gender', 'female')">Female</button>
+                          <button type="button" class="btn btn-outline-primary py-0 px-2 voice-btn" 
+                                  :class="voiceGender === 'male' ? 'active' : ''"
+                                  :disabled="sessionId"
+                                  @click="voiceGender = 'male'; localStorage.setItem('interview_voice_gender', 'male')">Male</button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-4">
+          <div class="h-100 p-3 rounded-3 bg-dark bg-opacity-20 border border-white border-opacity-10">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <div class="dot" :class="sessionId ? 'bg-success' : (hasResume ? 'bg-primary' : 'bg-secondary')"></div>
+              <span class="small fw-bold text-uppercase tracking-wider text-secondary" x-text="sessionId ? 'Session Active' : (hasResume ? 'System Ready' : 'System Idle')"></span>
+            </div>
+            <div class="small text-white-50">
+              <i class="bi bi-info-circle me-1"></i> 
+              <span x-show="!sessionId && hasResume">Click "Start" to begin your mock interview for <strong class="text-white" x-text="jobTitle"></strong>.</span>
+              <span x-show="!sessionId && !hasResume">Please upload your resume first to begin.</span>
+              <span x-show="sessionId">Speak or type clearly. The AI will analyze your response.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Section -->
+      <div class="row mb-4">
+        <div class="col-12 text-center">
+          <div class="p-3 rounded-4 bg-dark bg-opacity-40 border border-white border-opacity-10 shadow-sm">
+            <!-- Session Info -->
+            <div class="d-flex align-items-center justify-content-center gap-3 mb-3 small" x-show="!readinessScore">
+              <span class="text-warning fw-bold">
+                <i class="bi bi-info-circle me-1"></i>
+                <span x-text="interviewAttempts"></span> of <span x-text="maxInterviewAttempts"></span> sessions left today
+              </span>
+              <span class="text-white-50 opacity-50">|</span>
+              <span class="text-white-50">Resets at 00:00 MY (GMT+8)</span>
+            </div>
+            
+            <!-- Readiness Score Section (Visible when interview ends) -->
+            <div x-show="readinessScore" x-transition x-cloak class="mb-3 animate-fade-in">
+              <div class="d-flex flex-column align-items-center">
+                <div class="readiness-display mb-3">
+                  <div class="readiness-circle" :class="getScoreColorClass()">
+                    <span class="fs-1 fw-bold" x-text="readinessScore"></span>
+                    <span class="fs-6 opacity-50">/100</span>
+                  </div>
+                  <div class="readiness-label">READINESS SCORE</div>
+                </div>
+                <div class="p-4 rounded-4 feedback-box shadow-lg feedback-box-max">
+                  <h6 class="text-primary small fw-bold text-uppercase mb-2 tracking-widest">Constructive Feedback</h6>
+                  <p class="small text-light mb-0 feedback-text" x-text="feedbackExplanation"></p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Buttons -->
+            <div class="d-flex flex-column flex-sm-row justify-content-center gap-2">
+              <button class="btn btn-primary px-4 py-2 fw-bold shadow-sm w-100 w-sm-auto" @click="start()" :disabled="sessionId || !hasResume">
+                <i class="bi bi-play-fill me-1"></i> Start Interview
+              </button>
+              <button class="btn btn-outline-danger px-4 py-2 fw-bold shadow-sm w-100 w-sm-auto" @click="end()" :disabled="!sessionId">
+                <i class="bi bi-stop-fill me-1"></i> End Session
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resume Info Section (Middle) -->
+      <div class="mb-4" x-show="!sessionId">
+        <template x-if="hasResume">
+          <div class="p-3 rounded-3 bg-dark bg-opacity-40 border border-white border-opacity-10 shadow-sm">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <h6 class="mb-0 fw-bold text-white">
+                <i class="bi bi-file-earmark-person text-primary me-2"></i>Target Role: <span class="text-info opacity-75" x-text="jobTitle"></span>
+              </h6>
+              <a href="/static/pages/dashboard.html" class="btn btn-sm btn-outline-light border-opacity-25 py-0 px-3">Update Resume</a>
+            </div>
+            <div class="row g-2">
+              <div class="col-12">
+                <div class="small text-white-50 mb-1 fw-bold text-uppercase tracking-wider keywords-label">Core Keywords Identified</div>
+                <div class="p-2 rounded bg-black bg-opacity-30 border border-white border-opacity-10">
+                  <span class="small text-info" x-text="resumeFeedback && resumeFeedback.Keywords ? resumeFeedback.Keywords.slice(0, 12).join(', ') : 'N/A'"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+        <template x-if="!hasResume">
+          <div class="text-center p-5 rounded-4 border-2 border-dashed border-white border-opacity-10 bg-dark bg-opacity-10">
+            <i class="bi bi-file-earmark-arrow-up fs-1 text-secondary mb-3 d-block"></i>
+            <h5 class="fw-bold mb-2">Resume Required</h5>
+            <p class="text-secondary small mb-4">You need to upload and analyze your resume before starting an interview session. This helps the AI tailor the questions to your experience.</p>
+            <a href="/static/pages/dashboard.html" class="btn btn-primary px-4">
+              <i class="bi bi-cloud-upload me-2"></i>Go to Dashboard
+            </a>
+          </div>
+        </template>
+      </div>
+
+      <div class="p-3 bg-dark rounded mb-3 interview-transcript-container" x-show="transcript.length > 0" x-ref="transcriptBox">
+        <!-- Sticky Chat Header with Interviewer Icon -->
+        <div class="sticky-top bg-dark border-bottom border-white border-opacity-10 pb-2 mb-3 d-flex align-items-center justify-content-between sticky-header-container">
+          <div class="d-flex align-items-center gap-2">
+            <div :class="iconClass" class="d-flex align-items-center justify-content-center bg-primary bg-opacity-10 rounded-circle interviewer-avatar">
+              <template x-if="thinking">
+                <i class="bi bi-cpu fs-6 text-primary icon-thinking"></i>
+              </template>
+              <template x-if="speaking">
+                <i class="bi bi-soundwave fs-6 text-primary icon-speaking"></i>
+              </template>
+              <template x-if="!thinking && !speaking">
+                <i class="bi bi-robot fs-6 text-primary"></i>
+              </template>
+            </div>
+            <div class="d-flex flex-column">
+              <span class="small fw-bold text-white interviewer-label">Interviewer</span>
+              <span class="text-primary interviewer-status" x-text="thinking ? 'Thinking...' : (speaking ? 'Speaking...' : 'Ready')"></span>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <span class="badge bg-primary rounded-pill px-3 py-1 question-badge" x-show="sessionId" x-text="`Q: ${currentQuestion} / ${questionLimit}`"></span>
+            <div class="session-timer-mini d-flex align-items-center gap-1 text-warning small timer-mini" x-show="sessionId">
+              <i class="bi bi-clock-fill"></i>
+              <span x-text="formatTime(interviewTime)"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat">
+          <template x-for="t in transcript">
+            <div :class="t.role==='assistant' ? 'msg left' : 'msg right'">
+              <div class="bubble" x-text="t.text"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+      <form class="d-flex gap-2" @submit.prevent="send()">
+        <input type="text" class="form-control" placeholder="Type your answer..." x-model="answer" :disabled="!sessionId">
+        <button type="submit" class="btn btn-primary" :disabled="!sessionId">Send</button>
+        <button type="button" class="btn btn-outline-light" x-show="mic" @click="record()" :disabled="!sessionId">Record</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

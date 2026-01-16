@@ -1,0 +1,200 @@
+from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi.security import OAuth2PasswordRequestForm
+from datetime import datetime, timezone, timedelta
+from bson import ObjectId
+from ..db import users, pending_users
+from ..models import UserIn, Token
+from ..auth import hash_password, verify_password, create_access_token, get_current_user
+from ..services.rate_limit import rate_limit
+from ..services.audit import log_event, check_admin_ip, trigger_admin_alert
+from ..services.utils import get_malaysia_time
+
+from ..config import (
+    EMAILJS_PUBLIC_KEY, 
+    EMAILJS_SERVICE_ID, 
+    EMAILJS_TEMPLATE_ID
+)
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+@router.get("/config")
+async def get_auth_config():
+    """Exposes public configuration for EmailJS to the frontend"""
+    return {
+        "emailjs_public_key": EMAILJS_PUBLIC_KEY,
+        "emailjs_service_id": EMAILJS_SERVICE_ID,
+        "emailjs_template_id": EMAILJS_TEMPLATE_ID
+    }
+
+@router.post("/register", dependencies=[Depends(rate_limit)])
+async def register(payload: UserIn, request: Request):
+    # Ensure email is stripped and lowercase
+    email = str(payload.email).strip().lower()
+    ip_address = request.client.host if request.client else "unknown"
+    
+    # Check if user already exists in permanent collection
+    existing = await users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    
+    now = get_malaysia_time()
+    
+    # Generate a simple 6-digit OTP for verification
+    import random
+    otp = str(random.randint(100000, 999999))
+    
+    # Store registration data in pending_users collection
+    pending_doc = {
+        "email": email,
+        "password_hash": hash_password(payload.password),
+        "verification_otp": otp,
+        "otp_created_at": now,
+        "ip_address": ip_address,
+        "created_at": now
+    }
+    
+    # Update or insert (upsert) to handle multiple registration attempts
+    await pending_users.update_one(
+        {"email": email},
+        {"$set": pending_doc},
+        upsert=True
+    )
+    
+    # Calculate expiry for frontend display (15 mins as requested)
+    expiry_time = (now + timedelta(minutes=15)).strftime("%H:%M")
+    
+    # We return the OTP so the frontend can send it via EmailJS
+    return {
+        "message": "Verification code sent. Please verify email to complete registration.",
+        "otp": otp,
+        "expiry": expiry_time,
+        "email": email
+    }
+
+@router.post("/verify-email")
+async def verify_email(payload: dict):
+    email = payload.get("email", "").strip().lower()
+    otp = payload.get("otp", "").strip()
+    
+    # Check if user is in pending_users
+    pending_user = await pending_users.find_one({"email": email})
+    
+    # If not in pending, check if already verified in users collection
+    if not pending_user:
+        user = await users.find_one({"email": email})
+        if user and user.get("is_verified"):
+            return {"message": "Email already verified. You can now login."}
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration session not found. Please register again.")
+    
+    if pending_user.get("verification_otp") != otp:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
+    
+    # Check if OTP is expired (15 minutes)
+    otp_time = pending_user.get("otp_created_at")
+    if otp_time:
+        if otp_time.tzinfo is None:
+            otp_time = otp_time.replace(tzinfo=timezone.utc)
+        
+        now_utc = datetime.now(timezone.utc)
+        diff = now_utc - otp_time
+        
+        if diff.total_seconds() > 900: # 15 mins
+            # Clean up expired pending registration
+            await pending_users.delete_one({"email": email})
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expired. Please register again.")
+    
+    # OTP is valid! Create the permanent account now
+    now = get_malaysia_time()
+    user_doc = {
+        "email": email,
+        "password_hash": pending_user["password_hash"],
+        "role": "user",
+        "created_at": now,
+        "last_login_ip": pending_user.get("ip_address", "unknown"),
+        "is_verified": True,
+        "weekly_question_count": 0,
+        "weekly_reset_at": now,
+        "daily_resume_count": 0,
+        "daily_interview_count": 0,
+        "daily_reset_at": now,
+    }
+    
+    await users.insert_one(user_doc)
+    
+    # Remove from pending_users
+    await pending_users.delete_one({"email": email})
+    
+    return {"message": "Email verified successfully! Your account has been created."}
+
+@router.post("/login", response_model=Token, dependencies=[Depends(rate_limit)])
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+    # Ensure username is stripped and lowercase
+    username = str(form_data.username).strip().lower()
+    ip_address = request.client.host if request.client else "unknown"
+    
+    user = await users.find_one({"email": username})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
+    
+    if not verify_password(form_data.password, user["password_hash"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
+    
+    # Check if user is verified
+    if not user.get("is_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Email not verified. Please verify your email first."
+        )
+
+    # Prevent admins from using normal user login flow
+    if user.get("role") in ("admin", "super_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or super_admin cannot login here. Use admin interface.")
+    
+    # Update last login info
+    await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
+    
+    token = create_access_token(str(user["_id"]), user.get("role", "user"))
+    return Token(access_token=token)
+
+@router.post("/admin_login", response_model=Token, dependencies=[Depends(rate_limit)])
+async def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+    # Ensure username is stripped and lowercase
+    username = str(form_data.username).strip().lower()
+    ip_address = request.client.host if request.client else "unknown"
+    
+    user = await users.find_one({"email": username})
+    if not user:
+        await log_event(None, username, "admin_login", ip_address, "failure", {"reason": "user_not_found"})
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
+    
+    # IP Monitoring and Restrictions
+    ip_status = await check_admin_ip(username, ip_address)
+    
+    if not verify_password(form_data.password, user["password_hash"]):
+        await log_event(str(user["_id"]), username, "admin_login", ip_address, "failure", {"reason": "wrong_password"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
+    
+    if user.get("role") not in ("admin", "super_admin"):
+        await log_event(str(user["_id"]), username, "admin_login", ip_address, "failure", {"reason": "not_admin"})
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin or super_admin can login here")
+
+    # Handle IP issues
+    if not ip_status["is_allowed"]:
+        await trigger_admin_alert(username, ip_address, "Unknown IP access attempt")
+        # Soft restriction: we still allow login if password is correct, but log it heavily and alert
+        await log_event(str(user["_id"]), username, "admin_login", ip_address, "warning", {"reason": "unauthorized_ip"})
+    
+    if ip_status["is_anomaly"]:
+        await trigger_admin_alert(username, ip_address, f"IP Anomaly detected. Previous: {ip_status['last_ip']}")
+        await log_event(str(user["_id"]), username, "admin_login", ip_address, "warning", {"reason": "ip_anomaly"})
+
+    # Update last login info
+    await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
+    
+    await log_event(str(user["_id"]), username, "admin_login", ip_address, "success")
+    token = create_access_token(str(user["_id"]), user.get("role"))
+    return Token(access_token=token)
+
+@router.get("/me")
+async def me(current=Depends(get_current_user)):
+    return current
