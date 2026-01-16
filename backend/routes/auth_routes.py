@@ -12,18 +12,20 @@ from ..services.utils import get_malaysia_time
 from ..config import (
     EMAILJS_PUBLIC_KEY, 
     EMAILJS_SERVICE_ID, 
-    EMAILJS_TEMPLATE_ID
+    EMAILJS_TEMPLATE_ID,
+    CAREERJET_WIDGET_ID
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.get("/config")
 async def get_auth_config():
-    """Exposes public configuration for EmailJS to the frontend"""
+    """Exposes public configuration for EmailJS and Careerjet to the frontend"""
     return {
         "emailjs_public_key": EMAILJS_PUBLIC_KEY,
         "emailjs_service_id": EMAILJS_SERVICE_ID,
-        "emailjs_template_id": EMAILJS_TEMPLATE_ID
+        "emailjs_template_id": EMAILJS_TEMPLATE_ID,
+        "careerjet_widget_id": CAREERJET_WIDGET_ID
     }
 
 @router.post("/register", dependencies=[Depends(rate_limit)])

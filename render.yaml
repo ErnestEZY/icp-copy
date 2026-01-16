@@ -25,3 +25,5 @@ services:
         sync: false
       - key: EMAILJS_TEMPLATE_ID
         sync: false
+      - key: CAREERJET_API_KEY
+        sync: false

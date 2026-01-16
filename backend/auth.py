@@ -79,7 +79,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         if not doc:
             print(f"DEBUG: User not found in DB. ID: {user_id} (type: {type(user_id)})")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-        return {"id": str(doc["_id"]), "email": doc["email"], "role": role}
+        return {
+            "id": str(doc["_id"]), 
+            "email": doc["email"], 
+            "role": role,
+            "target_job_title": doc.get("target_job_title", ""),
+            "target_location": doc.get("target_location", ""),
+            "has_analyzed": doc.get("has_analyzed", False)
+        }
     except jwt.ExpiredSignatureError:
         print("DEBUG: Token expired")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")

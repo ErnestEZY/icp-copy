@@ -2,6 +2,7 @@ function interview() {
   return {
     logged: !!icp.state.token,
     isAdmin: false,
+    hasAnalyzed: false,
     sessionId: null,
     questionLimit: 10,
     difficulty: "Intermediate",
@@ -46,6 +47,9 @@ function interview() {
         .then(r => r.json())
         .then(me => {
           this.isAdmin = me.role === 'admin' || me.role === 'super_admin';
+          const localFeedback = localStorage.getItem('resume_feedback');
+          const hasLocal = localFeedback && localFeedback !== 'null' && localFeedback !== 'undefined';
+          this.hasAnalyzed = me.has_analyzed || hasLocal;
         })
         .catch(() => { this.isAdmin = false; });
     },
@@ -152,9 +156,31 @@ function interview() {
           this.resumeFeedback = JSON.parse(feedback);
           this.jobTitle = title;
           this.hasResume = true;
+          this.hasAnalyzed = true;
         } catch (e) {
           console.error("Error parsing resume feedback", e);
         }
+      } else {
+        // If not in local storage, try to fetch the latest from backend
+        fetch('/api/resume/my', {
+          headers: { 'Authorization': 'Bearer ' + icp.state.token }
+        })
+        .then(r => r.ok ? r.json() : [])
+        .then(items => {
+          if (items && items.length > 0) {
+            // Sort by created_at desc and take the first
+            const latest = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            if (latest && latest.feedback) {
+              this.resumeFeedback = latest.feedback;
+                      this.jobTitle = latest.job_title;
+                      this.hasResume = true;
+                      this.hasAnalyzed = true;
+                      localStorage.setItem('resume_feedback', JSON.stringify(latest.feedback));
+              localStorage.setItem('target_job_title', latest.job_title);
+            }
+          }
+        })
+        .catch(() => {});
       }
     },
     get iconClass() { if (this.thinking) return 'icon thinking'; if (this.speaking) return 'icon speaking'; return 'icon idle'; },

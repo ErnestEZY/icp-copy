@@ -14,13 +14,20 @@
   <body x-data="{
     logged: !!icp.state.token,
     role: '',
+    hasAnalyzed: false,
     async checkRole() {
       if (!this.logged) return;
       try {
+        const response = await fetch('/api/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + icp.state.token }
+        });
+        const me = await response.json();
+        this.role = me.role || '';
+        this.hasAnalyzed = me.has_analyzed || !!localStorage.getItem('resume_feedback');
+      } catch (e) {
+        console.error('Error fetching user info:', e);
         const payload = icp.decodeToken(icp.state.token);
         this.role = payload?.role || '';
-      } catch (e) {
-        console.error('Error decoding token:', e);
       }
     },
     get dashboardUrl() {
@@ -32,6 +39,9 @@
        return (this.role === 'admin' || this.role === 'super_admin') 
          ? 'Go to Panel' 
          : 'Go to Dashboard';
+     },
+     get isAdmin() {
+       return this.role === 'admin' || this.role === 'super_admin';
      }
    }" @auth:changed.window="logged = !!icp.state.token; checkRole();" x-init="checkRole()">
     <!-- Page Loader -->
@@ -39,17 +49,6 @@
       <div class="loader-spinner"></div>
       <div class="loader-text">Loading ICP...</div>
     </div>
-    <script>
-      fetch('/api/meta/startup_id').then(r=>r.json()).then(j=>{
-        const prev = localStorage.getItem('startup_id') || '';
-        if(prev !== j.startup_id){
-          localStorage.setItem('startup_id', j.startup_id||'');
-          localStorage.removeItem('token');
-          document.body.dispatchEvent(new CustomEvent('auth:changed'));
-        }
-      }).catch(()=>{});
-      try{ localStorage.removeItem('resume_feedback'); }catch(e){}
-    </script>
     <nav class="navbar navbar-expand-lg navbar-dark glass-nav">
       <div class="container">
         <div class="d-flex align-items-center gap-3">
@@ -70,13 +69,11 @@
               </template>
             </div>
         </div>
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <div class="ms-auto d-flex gap-2 align-items-center mt-3 mt-lg-0">
-            <a class="btn btn-outline-warning btn-sm px-2 d-none d-lg-inline-block" href="/static/pages/admin.html" title="Admin Portal">
-              <i class="bi bi-shield-lock"></i>
-              <span>Admin Portal</span>
-            </a>
-          </div>
+        <!-- Desktop Right Menu -->
+        <div class="ms-auto d-none d-md-flex gap-2 align-items-center">
+          <a class="btn btn-outline-warning btn-sm px-3" href="/static/pages/admin.html" title="Admin Portal">
+            <span>Admin Portal</span>
+          </a>
         </div>
       </div>
     </nav>
@@ -86,12 +83,12 @@
       <div class="row align-items-center min-vh-50">
         <div class="col-lg-6 animate-fade-in">
           <h1 class="display-3 fw-bold mb-4">Master Your Next <br><span class="text-primary">Interview</span></h1>
-          <p class="lead mb-5 text-secondary">Get structured resume feedback and practice with a professional, AI-powered mock interview. Improve with clear advantages, disadvantages, suggestions, and keywords.</p>
-          <div class="d-flex gap-3">
-            <a class="btn btn-primary btn-lg px-5 py-3 rounded-pill" :href="logged ? dashboardUrl : '/static/pages/cta.html'">
+          <p class="lead mb-5 text-secondary">Get structured resume feedback, practice with a professional AI-powered mock interview, and search for tailored job opportunities based on your skills.</p>
+          <div class="d-flex flex-column flex-sm-row gap-3">
+            <a class="btn btn-primary btn-lg px-5 py-3 rounded-pill w-100 w-sm-auto" :href="logged ? dashboardUrl : '/static/pages/cta.html'">
               <span x-text="logged ? dashboardText : 'Get Started'"></span>
             </a>
-            <a class="btn btn-outline-light btn-lg px-4 py-3 rounded-pill" href="#features">Learn More</a>
+            <a class="btn btn-outline-light btn-lg px-4 py-3 rounded-pill w-100 w-sm-auto" href="#features">Learn More</a>
           </div>
         </div>
         <div class="col-lg-6 mt-5 mt-lg-0 animate-slide-up">
@@ -114,13 +111,19 @@
               <div class="col-12">
                 <div class="d-flex gap-3">
                   <span class="badge bg-primary rounded-circle d-flex align-items-center justify-content-center step-number">2</span>
-                  <p class="mb-0">Practice with 15 focused, plain-text questions</p>
+                  <p class="mb-0">Practice with a number of focused, plain-text questions</p>
                 </div>
               </div>
               <div class="col-12">
                 <div class="d-flex gap-3">
                   <span class="badge bg-primary rounded-circle d-flex align-items-center justify-content-center step-number">3</span>
                   <p class="mb-0">Review performance history and track progress</p>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="d-flex gap-3">
+                  <span class="badge bg-primary rounded-circle d-flex align-items-center justify-content-center step-number">4</span>
+                  <p class="mb-0">Search for jobs that match your analyzed profile</p>
                 </div>
               </div>
             </div>
@@ -156,18 +159,18 @@
             </svg>
           </div>
           <h5>Time & Cost Aware</h5>
-          <p class="text-secondary">Weekly quotas and question limits to ensure focused preparation and controlled API usage.</p>
+          <p class="text-secondary">Weekly quotas and question limits to ensure focused preparation and controlled usage.</p>
         </div>
       </div>
       <div class="col-md-4 animate-slide-up delay-300">
         <div class="card p-4 feature-card">
-          <div class="mb-3 text-warning">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2V3a2 2 0 0 0-2-2h10zM5 1a2 2 0 0 0 2 2v4a2 2 0 0 1-2 2v5a2 2 0 0 1 2 2h4a2 2 0 0 1 2-2V9a2 2 0 0 1-2-2V3a2 2 0 0 0 2-2H5z"/>
+          <div class="mb-3 text-info">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16">
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
             </svg>
           </div>
-          <h5>Admin Tools</h5>
-          <p class="text-secondary">Advanced tools for filtering, tagging, and reviewing resumes securely within the platform.</p>
+          <h5>Search Job</h5>
+          <p class="text-secondary">Integrated Careerjet search box to find relevant jobs based on your analyzed skills and target role.</p>
         </div>
       </div>
     </div>

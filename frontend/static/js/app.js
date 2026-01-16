@@ -15,18 +15,23 @@ const state = {
     this.token = "";
     localStorage.removeItem("token");
     try {
+      // Forcefully remove everything related to the user session
+      localStorage.removeItem('target_job_title');
+      localStorage.removeItem('target_location');
       localStorage.removeItem('resume_feedback');
       localStorage.removeItem('resume_filename');
-      localStorage.removeItem('target_job_title');
       localStorage.removeItem('session_expiry_user');
       localStorage.removeItem('session_expiry_admin');
       localStorage.removeItem('interview_voice_gender');
-      // Clear all items to be absolutely sure no session data leaks
-      // but we might want to keep some non-sensitive settings if any.
-      // For now, let's be explicit with the sensitive ones.
-    } catch (e) {
-      console.error("Error clearing localStorage:", e);
-    }
+      
+      // Also clear everything else just to be safe, except startup_id
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key !== 'startup_id') {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {}
     window.dispatchEvent(new CustomEvent("auth:changed"));
   }
 };
@@ -68,6 +73,30 @@ function decodeToken(token) {
 }
 
 window.icp = { state, logout, decodeToken };
+
+// Global Startup Check: Clear sessions if server has restarted
+(function checkStartup() {
+  fetch('/api/meta/startup_id')
+    .then(r => r.ok ? r.json() : null)
+    .then(j => {
+      if (j && j.startup_id) {
+        const prev = localStorage.getItem('startup_id') || '';
+        // Force logout if startup_id changed (or is missing) to ensure fresh session on server restart
+        if (prev !== j.startup_id) {
+          localStorage.clear(); 
+          localStorage.setItem('startup_id', j.startup_id);
+          window.dispatchEvent(new CustomEvent("auth:changed"));
+          // Force redirect to home if they were on a protected page
+          if (window.location.pathname !== '/' && !window.location.pathname.includes('login.html') && !window.location.pathname.includes('register.html')) {
+            window.location.href = "/";
+          }
+        } else {
+          localStorage.setItem('startup_id', j.startup_id);
+        }
+      }
+    })
+    .catch(() => {});
+})();
 
 // Global Loader Logic
 const hideLoader = () => {

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search Job - ICP</title>
+  <script>
+    if (!localStorage.getItem("token") || localStorage.getItem("token") === "undefined" || localStorage.getItem("token") === "null") {
+      window.location.href = '/static/pages/login.html';
+    }
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/js/app.js"></script>
+</head>
+<body x-data="jobSearchApp()" @auth:changed.window="logged = !!icp.state.token; if(logged) { checkAdmin(); init(); } else { hasAnalyzed = false; hasSearched = false; this.updateSearchBox(); }" class="auth-page">
+  <script>
+    function jobSearchApp() {
+      return {
+        logged: !!localStorage.getItem('token'),
+        isAdmin: false,
+        hasAnalyzed: !!localStorage.getItem('resume_feedback'),
+        isLoading: false,
+        hasSearched: false,
+        careerjetWidgetId: '',
+
+        async fetchConfig() {
+          try {
+            const r = await fetch('/api/auth/config');
+            const j = await r.json();
+            this.careerjetWidgetId = j.careerjet_widget_id || '';
+          } catch (e) {}
+        },
+
+        checkAdmin() {
+          if (!this.logged) return Promise.resolve();
+          return fetch('/api/auth/me', {
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+          })
+          .then(r => r.json())
+          .then(me => {
+            this.isAdmin = me.role === 'admin' || me.role === 'super_admin';
+            
+            // Strictly check if they have analyzed a resume
+            // We only set hasAnalyzed to true if the backend confirms it AND we have feedback locally
+            // or if we fetch it now.
+            if (me.has_analyzed) {
+              if (localStorage.getItem('resume_feedback')) {
+                this.hasAnalyzed = true;
+              } else {
+                // Fallback: Fetch latest resume to see if feedback exists
+                fetch('/api/resume/my', {
+                  headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                })
+                .then(r => r.ok ? r.json() : [])
+                .then(items => {
+                  if (items && items.length > 0) {
+                    const latest = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                    if (latest && latest.feedback) {
+                      localStorage.setItem('resume_feedback', JSON.stringify(latest.feedback));
+                      this.hasAnalyzed = true;
+                    }
+                  } else {
+                    this.hasAnalyzed = false;
+                  }
+                })
+                .catch(() => { this.hasAnalyzed = false; });
+              }
+            } else {
+              this.hasAnalyzed = false;
+            }
+            
+            // Do NOT automatically sync job title/location from backend anymore to ensure 
+            // the fields are clean upon logout/restart as requested.
+            // The fields will only be populated if the user types or performs a new analysis.
+
+            // Always trigger an update to the search box once we have the latest info
+            this.updateSearchBox();
+          })
+          .catch(() => { this.isAdmin = false; });
+        },
+
+        async init() {
+          await this.fetchConfig();
+          
+          const promise = this.logged ? this.checkAdmin() : Promise.resolve();
+          promise.finally(() => {
+            this.updateSearchBox();
+            setTimeout(() => { 
+              const loader = document.getElementById('global-loader');
+              if(loader) loader.style.display = 'none'; 
+            }, 500);
+          });
+        },
+        
+        updateSearchBox() {
+          this.isLoading = true;
+          this.hasSearched = true;
+          const container = document.getElementById('search-box-container');
+          
+          const query = localStorage.getItem('target_job_title') || '';
+          const location = localStorage.getItem('target_location') || '';
+
+          if (container) {
+            container.innerHTML = '';
+            
+            // Remove any existing Careerjet script to force a reload
+            const oldScript = document.getElementById('cj-search-box-script');
+            if (oldScript) oldScript.remove();
+
+            const widgetDiv = document.createElement('div');
+            widgetDiv.className = 'cj-search-box';
+            widgetDiv.setAttribute('data-locale', 'en_MY'); 
+            
+            // Primary Careerjet attributes - always set even if empty to clear previous state
+            widgetDiv.setAttribute('data-keywords', query);
+            widgetDiv.setAttribute('data-location', location);
+
+            // Construct URL with standard q and l parameters
+            let widgetUrl = 'https://widget.careerjet.net/search-box/' + this.careerjetWidgetId;
+            let params = [];
+            params.push('q=' + encodeURIComponent(query));
+            params.push('l=' + encodeURIComponent(location));
+            if (params.length > 0) widgetUrl += '?' + params.join('&');
+
+            widgetDiv.setAttribute('data-url', widgetUrl);
+            container.appendChild(widgetDiv);
+
+            // Re-add the script
+            const script = document.createElement('script');
+            script.id = 'cj-search-box-script';
+            script.async = true;
+            script.src = 'https://static.careerjet.org/js/all_widget_search_box_3rd_party.min.js?t=' + Date.now();
+            container.appendChild(script);
+          }
+          setTimeout(() => { this.isLoading = false; }, 1000);
+        }
+      }
+    }
+  </script>
+  
+  <!-- Page Loader -->
+  <div id="global-loader" class="page-loader">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Searching for Jobs...</div>
+  </div>
+
+  <nav class="navbar navbar-dark glass-nav">
+    <div class="container d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center gap-3">
+        <a class="navbar-brand fw-bold fs-4 mb-0 me-0" href="/">
+          <span class="text-primary">I</span>CP
+        </a>
+        <div class="d-flex gap-1">
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/dashboard.html" title="Dashboard">
+            <i class="bi bi-speedometer2 d-md-none"></i>
+            <span class="d-none d-md-inline">Dashboard</span>
+          </a>
+          <a class="btn btn-primary btn-sm px-2" href="/static/pages/find-jobs.html" title="Search Job">
+            <i class="bi bi-search d-md-none"></i>
+            <span class="d-none d-md-inline">Search Job</span>
+          </a>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/history.html" title="View History">
+            <i class="bi bi-clock-history d-md-none"></i>
+            <span class="d-none d-md-inline">View History</span>
+          </a>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/interview.html" title="Mock Interview">
+            <i class="bi bi-play-circle d-md-none"></i>
+            <span class="d-none d-md-inline">Mock Interview</span>
+          </a>
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+          <button class="btn btn-outline-danger btn-sm px-2" onclick="icp.logout()" x-show="logged" title="Logout">
+          <i class="bi bi-box-arrow-right d-md-none"></i>
+          <span class="d-none d-md-inline">Logout</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Resume Upload Reminder Banner -->
+  <div class="container mt-4" x-show="!hasAnalyzed" x-cloak x-transition>
+    <div class="alert alert-info border-0 shadow-sm rounded-4 p-4 mb-0 animate-fade-in">
+      <div class="d-flex align-items-center gap-3">
+        <div class="bg-info bg-opacity-10 p-3 rounded-3">
+          <i class="bi bi-info-circle-fill text-info fs-3"></i>
+        </div>
+        <div class="flex-grow-1">
+          <h5 class="alert-heading fw-bold mb-1">Unlock Personalized Job Recommendations</h5>
+          <p class="mb-0 text-secondary">Find jobs tailored to your skills! Please upload and analyze your resume in the <a href="/static/pages/dashboard.html" class="fw-bold text-info text-decoration-none hover-underline">Dashboard</a> to get the best results.</p>
+        </div>
+        <div class="ms-auto d-none d-md-block">
+          <a href="/static/pages/dashboard.html" class="btn btn-info text-white px-4 rounded-pill fw-bold">Upload Now</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-10">
+        <div class="text-center mb-5">
+          <h1 class="display-5 fw-extrabold text-white mb-2">Search Your Next Role</h1>
+          <p class="text-secondary lead">Browse curated job opportunities tailored to your profile</p>
+        </div>
+
+        <!-- Careerjet Widget Section -->
+        <div class="cj-widget-dark-wrapper">
+          <div id="search-box-container" class="min-vh-50">
+            <!-- Standard Search Box Widget Injected Here -->
+          </div>
+        </div>
+
+        <!-- Loading Overlay for Widget -->
+        <div x-show="isLoading" x-transition class="text-center py-5">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <p class="text-secondary">Tailoring results for you...</p>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

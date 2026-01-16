@@ -9,6 +9,7 @@ from .routes.auth_routes import router as auth_router
 from .routes.resume_routes import router as resume_router
 from .routes.interview_routes import router as interview_router
 from .routes.admin_routes import router as admin_router
+from .routes.job_routes import router as job_router
 from .auth import ensure_admin
 from .services.rag_engine import rag_engine
 from .services.utils import get_malaysia_time
@@ -33,12 +34,13 @@ app.include_router(auth_router)
 app.include_router(resume_router)
 app.include_router(interview_router)
 app.include_router(admin_router)
+app.include_router(job_router)
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
 @app.on_event("startup")
 async def startup():
-    await ensure_admin()
+    # await ensure_admin()
     
     # Create TTL index for pending_users (expires after 15 minutes)
     try:
@@ -54,7 +56,16 @@ async def startup():
         pass
     app.state.startup_id = str(get_malaysia_time().timestamp())
 
+@app.get("/api/meta/startup_id")
+async def startup_id():
+    return {"startup_id": getattr(app.state, "startup_id", "")}
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
 # Catch-all to serve index.html for any unknown routes (SPA support)
+# This MUST be the last route defined
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 async def catch_all(request: Request, full_path: str):
     # If the path is empty, serve index.html
@@ -74,11 +85,3 @@ async def catch_all(request: Request, full_path: str):
             return HTMLResponse(f.read())
     except FileNotFoundError:
         return HTMLResponse("index.html not found", status_code=404)
-
-@app.get("/api/meta/startup_id")
-async def startup_id():
-    return {"startup_id": getattr(app.state, "startup_id", "")}
-
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    return Response(status_code=204)

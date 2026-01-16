@@ -25,7 +25,9 @@ def build_resume_prompt(text: str, context: str = "") -> str:
         "- \"Advantages\": a list of strings highlighting strong points.\n"
         "- \"Disadvantages\": a list of strings highlighting weak points.\n"
         "- \"Suggestions\": a list of strings for improvement.\n"
-        "- \"Keywords\": a list of 10-15 essential skills and industry keywords strictly extracted from the resume text.\n\n"
+        "- \"Keywords\": a list of 10-15 essential skills and industry keywords strictly extracted from the resume text.\n"
+        "- \"Location\": a string representing the user's current city or state (e.g., 'Kuala Lumpur', 'Petaling Jaya') extracted from the resume. If not found, return an empty string.\n"
+        "- \"DetectedJobTitle\": a string representing the most likely target job title for this user based on their experience and skills (e.g., 'Software Engineer', 'Data Scientist'). If not clear, return an empty string.\n\n"
         "Resume Text:\n" + text
     )
     return prompt
@@ -42,7 +44,9 @@ def parse_json_response(resp: str) -> Dict[str, Any]:
             "Advantages": ["Could not parse detailed advantages."],
             "Disadvantages": ["Could not parse detailed disadvantages."],
             "Suggestions": ["Please try again."],
-            "Keywords": []
+            "Keywords": [],
+            "Location": "",
+            "DetectedJobTitle": ""
         }
 
 def get_feedback(text: str) -> Dict[str, Any]:
@@ -53,6 +57,8 @@ def get_feedback(text: str) -> Dict[str, Any]:
             "Disadvantages": ["Generic statements", "Missing quantified achievements"],
             "Suggestions": ["Add metrics", "Tailor for job keywords"],
             "Keywords": ["Python", "FastAPI", "MongoDB", "Resume", "Interview"],
+            "Location": "Kuala Lumpur",
+            "DetectedJobTitle": "Software Engineer"
         }
     
     # RAG Step: Retrieve relevant context based on resume content

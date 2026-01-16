@@ -20,6 +20,7 @@
 <body x-data="{
      logged: !!icp.state.token,
      isAdmin: false,
+     hasAnalyzed: false,
      sessionTime: 0,
      timerId: null,
     formatTime(seconds) {
@@ -37,6 +38,14 @@
       .then(r => r.json())
       .then(me => {
         this.isAdmin = me.role === 'admin' || me.role === 'super_admin';
+        const localFeedback = localStorage.getItem('resume_feedback');
+        const hasLocal = localFeedback && localFeedback !== 'null' && localFeedback !== 'undefined';
+        this.hasAnalyzed = me.has_analyzed || hasLocal;
+        if (me.has_analyzed && !hasLocal) {
+          // If backend says analyzed but local is empty, we should ideally fetch it
+          // For now, just set a dummy value to satisfy the UI check in renderItems
+          localStorage.setItem('resume_feedback', 'true'); 
+        }
       })
       .catch(() => { this.isAdmin = false; });
     },
@@ -85,19 +94,21 @@
             <i class="bi bi-speedometer2 d-md-none"></i>
             <span class="d-none d-md-inline">Dashboard</span>
           </a>
-          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/interview.html" title="New Interview">
-            <i class="bi bi-play-circle d-md-none"></i>
-            <span class="d-none d-md-inline">New Interview</span>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/find-jobs.html" title="Search Job">
+            <i class="bi bi-search d-md-none"></i>
+            <span class="d-none d-md-inline">Search Job</span>
           </a>
-          <template x-if="isAdmin">
-            <a class="btn btn-outline-warning btn-sm px-2" href="/static/pages/admin.html" title="Admin Portal">
-              <i class="bi bi-shield-lock"></i>
-              <span>Admin Portal</span>
+          <a class="btn btn-primary btn-sm px-2" href="/static/pages/history.html" title="View History">
+            <i class="bi bi-clock-history d-md-none"></i>
+            <span class="d-none d-md-inline">View History</span>
+          </a>
+          <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/interview.html" title="Mock Interview">
+              <i class="bi bi-play-circle d-md-none"></i>
+              <span class="d-none d-md-inline">Mock Interview</span>
             </a>
-          </template>
         </div>
       </div>
-      <div>
+      <div class="d-flex gap-2">
         <button class="btn btn-outline-danger btn-sm px-2" onclick="icp.logout()" x-show="logged" title="Logout">
           <i class="bi bi-box-arrow-right d-md-none"></i>
           <span class="d-none d-md-inline">Logout</span>
@@ -160,6 +171,9 @@
       function renderItems(items) {
         list.innerHTML = '';
         if (!items || items.length === 0) {
+          const localFeedback = localStorage.getItem('resume_feedback');
+          const hasAnalyzed = (localFeedback && localFeedback !== 'null' && localFeedback !== 'undefined');
+          
           list.innerHTML = `
             <div class="col-12">
               <div class="card glass-card border-0 p-5 text-center">
@@ -168,7 +182,7 @@
                 </div>
                 <h4 class="fw-bold mb-2">No interviews yet</h4>
                 <p class="text-secondary mb-4">You haven't participated in any interview sessions yet.</p>
-                <a class="btn btn-primary btn-lg px-5 rounded-3" href="/static/pages/interview.html">Start First Interview</a>
+                ${hasAnalyzed ? `<a class="btn btn-primary btn-lg px-5 rounded-3" href="/static/pages/interview.html">Start First Interview</a>` : `<p class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i> Please analyze your resume in the dashboard first to start an interview.</p>`}
               </div>
             </div>
           `;

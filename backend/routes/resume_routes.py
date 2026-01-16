@@ -50,6 +50,12 @@ async def upload_resume(
     os.remove(tmp_path)
     feedback = get_feedback(text)
     
+    # Use AI detected job title if it's available and the provided one is generic
+    ai_detected_title = feedback.get("DetectedJobTitle")
+    final_job_title = job_title
+    if ai_detected_title and (len(job_title) < 3 or job_title.lower() in ["software", "engineer", "intern", "manager"]):
+        final_job_title = ai_detected_title
+
     # Increment daily count only after successful analysis
     await increment_daily_limit(current["id"], "daily_resume_count")
     
@@ -60,9 +66,13 @@ async def upload_resume(
     except:
         user_id_obj = current["id"]
 
+    update_data = {"has_analyzed": True, "target_job_title": final_job_title}
+    if feedback.get("Location"):
+        update_data["target_location"] = feedback["Location"]
+
     await users.update_one(
         {"_id": user_id_obj}, 
-        {"$set": {"has_analyzed": True, "target_job_title": job_title}}
+        {"$set": update_data}
     )
 
     if consent:
@@ -79,7 +89,7 @@ async def upload_resume(
             "consent": consent,
             "file_id": str(grid_id),
             "text": text,
-            "job_title": job_title,
+            "job_title": final_job_title,
             "feedback": feedback,
             "status": "pending",
             "tags": feedback.get("Keywords", []),
@@ -87,9 +97,9 @@ async def upload_resume(
             "created_at": get_malaysia_time(),
         }
         res = await resumes.insert_one(doc)
-        return {"id": str(res.inserted_id), "feedback": feedback}
+        return {"id": str(res.inserted_id), "feedback": feedback, "job_title": final_job_title}
     else:
-        return {"id": None, "feedback": feedback}
+        return {"id": None, "feedback": feedback, "job_title": final_job_title}
 
 @router.get("/my")
 async def my_resumes(current=Depends(get_current_user)):
