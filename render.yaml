@@ -3,15 +3,27 @@ services:
   - type: web
     name: fyp-backend
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r backend/requirements.txt
     startCommand: gunicorn -w 4 -k uvicorn.workers.UvicornWorker backend.main:app
     envVars:
       - key: MONGO_URI
-        sync: false # Set in Render Dashboard
+        sync: false
       - key: MISTRAL_API_KEY
-        sync: false # Set in Render Dashboard
+        sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: DB_NAME
+        value: interview_coach
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRATION_SECONDS
+        value: 2400
+      - key: EMAILJS_PUBLIC_KEY
+        sync: false
+      - key: EMAILJS_SERVICE_ID
+        sync: false
+      - key: EMAILJS_TEMPLATE_ID
+        sync: false
 
   # 2. Nginx Service (Static Files + Proxy)
   - type: web
