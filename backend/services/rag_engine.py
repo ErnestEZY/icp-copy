@@ -1,83 +1,83 @@
 import os
-import faiss
-import numpy as np
-from sentence_transformers import SentenceTransformer
+import re
 from typing import List, Dict, Any
 
 class RAGEngine:
+    """
+    Memory-efficient RAG Engine for Free Tier deployments.
+    Uses a simple keyword-based ranking instead of heavy vector embeddings (PyTorch/FAISS).
+    This reduces memory usage from >1GB to <50MB.
+    """
     def __init__(self, docs_dir: str = "backend/data/rag_docs"):
         self.docs_dir = docs_dir
-        # Use a very lightweight model for faster inference and smaller footprint
-        self.model_name = 'paraphrase-MiniLM-L3-v2'
-        self.model = None
         self.documents = []
-        self.index = None
         self._initialized = False
 
     def initialize(self):
-        """Explicit initialization to be called during startup."""
+        """Loads documents into memory."""
         if self._initialized:
             return
 
-        print(f"Initializing RAG Engine (Loading {self.model_name})...")
-        # Load model and move to CPU (standard for lightweight deployments)
-        self.model = SentenceTransformer(self.model_name)
+        print("Initializing Lightweight RAG Engine...")
         self._load_documents()
-        self._build_index()
         self._initialized = True
-        print("RAG Engine ready.")
+        print(f"RAG Engine ready with {len(self.documents)} chunks.")
 
     def _ensure_initialized(self):
-        """Fallback for lazy initialization if not called during startup."""
         if not self._initialized:
             self.initialize()
 
     def _load_documents(self):
         """Loads and chunks documents from the rag_docs directory."""
         if not os.path.exists(self.docs_dir):
+            print(f"Warning: RAG docs directory not found at {self.docs_dir}")
             return
 
         for filename in os.listdir(self.docs_dir):
             if filename.endswith(".txt"):
                 path = os.path.join(self.docs_dir, filename)
-                with open(path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    # Simple chunking by paragraph/section
-                    sections = content.split("\n\n")
-                    for section in sections:
-                        if section.strip():
-                            self.documents.append({
-                                "content": section.strip(),
-                                "source": filename
-                            })
-
-    def _build_index(self):
-        """Builds a FAISS index for vector search."""
-        if not self.documents:
-            return
-
-        contents = [doc["content"] for doc in self.documents]
-        embeddings = self.model.encode(contents)
-        
-        dimension = embeddings.shape[1]
-        self.index = faiss.IndexFlatL2(dimension)
-        self.index.add(np.array(embeddings).astype('float32'))
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        # Split by double newline to get logical chunks
+                        sections = content.split("\n\n")
+                        for section in sections:
+                            text = section.strip()
+                            if text:
+                                # Pre-process text for faster matching
+                                words = set(re.findall(r'\w+', text.lower()))
+                                self.documents.append({
+                                    "content": text,
+                                    "source": filename,
+                                    "words": words
+                                })
+                except Exception as e:
+                    print(f"Error loading {filename}: {e}")
 
     def retrieve(self, query: str, top_k: int = 5) -> List[str]:
-        """Retrieves relevant chunks for a given query."""
+        """
+        Retrieves relevant chunks using simple keyword overlap.
+        Perfect for small document sets and low-memory environments.
+        """
         self._ensure_initialized()
-        if self.index is None or not self.documents:
+        if not self.documents:
             return []
 
-        query_embedding = self.model.encode([query])
-        distances, indices = self.index.search(np.array(query_embedding).astype('float32'), top_k)
+        # Tokenize query
+        query_words = set(re.findall(r'\w+', query.lower()))
         
-        results = []
-        for idx in indices[0]:
-            if idx != -1:
-                results.append(self.documents[idx]["content"])
+        # Rank documents by word overlap (Jaccard-like or simple count)
+        scored_docs = []
+        for doc in self.documents:
+            overlap = len(query_words.intersection(doc["words"]))
+            if overlap > 0:
+                scored_docs.append((overlap, doc["content"]))
         
-        return results
+        # Sort by overlap count (descending)
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+        
+        # Return top K contents
+        return [doc[1] for doc in scored_docs[:top_k]]
 
 # Singleton instance
 rag_engine = RAGEngine()
