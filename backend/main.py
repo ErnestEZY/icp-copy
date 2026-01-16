@@ -54,10 +54,26 @@ async def startup():
         pass
     app.state.startup_id = str(get_malaysia_time().timestamp())
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    with open("frontend/index.html", "r", encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+# Catch-all to serve index.html for any unknown routes (SPA support)
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+async def catch_all(request: Request, full_path: str):
+    # If the path is empty, serve index.html
+    if not full_path:
+        with open("frontend/index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    
+    # Otherwise, check if it's a request for an API (let the router handle it)
+    if full_path.startswith("api/"):
+        # This is a bit of a trick: if it's an API route but reached here, 
+        # it means the router didn't match it.
+        return Response(status_code=404)
+        
+    # Default to index.html for all other routes
+    try:
+        with open("frontend/index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except FileNotFoundError:
+        return HTMLResponse("index.html not found", status_code=404)
 
 @app.get("/api/meta/startup_id")
 async def startup_id():
