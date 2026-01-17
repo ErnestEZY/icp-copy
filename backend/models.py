@@ -6,6 +6,13 @@ class UserIn(BaseModel):
     email: EmailStr
     password: str
 
+class ManualProfileIn(BaseModel):
+    jobTitle: str
+    experience: str
+    summary: str
+    skills: str
+    achievement: str
+
 class User(BaseModel):
     id: str
     email: EmailStr

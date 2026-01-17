@@ -4,7 +4,7 @@ from bson import ObjectId
 import os
 import base64
 from ..db import resumes, users, fs
-from ..models import ResumeFeedback
+from ..models import ResumeFeedback, ManualProfileIn
 from ..auth import get_current_user
 from ..services.resume_parser import extract_resume_text
 from ..services.ai_feedback import get_feedback
@@ -107,6 +107,70 @@ async def upload_resume(
         return {"id": str(res.inserted_id), "feedback": feedback, "job_title": final_job_title}
     else:
         return {"id": None, "feedback": feedback, "job_title": final_job_title}
+
+@router.post("/manual-upload")
+async def manual_upload_profile(
+    data: ManualProfileIn,
+    current=Depends(get_current_user),
+    _: None = Depends(rate_limit),
+):
+    if current.get("role") != "user":
+        raise HTTPException(status_code=403, detail="Only regular users can build profiles")
+    
+    can_upload, remaining = await check_daily_limit(current["id"], "daily_resume_count", 5)
+    if not can_upload:
+        raise HTTPException(status_code=429, detail="Daily profile analysis limit reached. Resets at 00:00 Malaysia Time.")
+
+    # Construct virtual resume text
+    text = f"""
+    TARGET JOB TITLE: {data.jobTitle}
+    EXPERIENCE: {data.experience}
+    PROFESSIONAL SUMMARY: {data.summary}
+    TOP SKILLS: {data.skills}
+    KEY ACHIEVEMENT: {data.achievement}
+    """
+    
+    feedback = get_feedback(text)
+
+    # Increment daily count
+    await increment_daily_limit(current["id"], "daily_resume_count")
+    
+    # Update user status
+    user_id_obj = None
+    try:
+        user_id_obj = ObjectId(current["id"])
+    except:
+        user_id_obj = current["id"]
+
+    final_job_title = feedback.get("DetectedJobTitle") or data.jobTitle
+    update_data = {"has_analyzed": True, "target_job_title": final_job_title}
+    if feedback.get("Location"):
+        update_data["target_location"] = feedback["Location"]
+
+    await users.update_one(
+        {"_id": user_id_obj}, 
+        {"$set": update_data}
+    )
+
+    # Store a record for history (optional, but good for UX)
+    doc = {
+        "resume_id": str(ObjectId()),
+        "user_id": current["id"],
+        "filename": "Guided Profile Builder",
+        "mime_type": "text/plain",
+        "consent": True,
+        "file_id": None,
+        "text": text,
+        "job_title": final_job_title,
+        "feedback": feedback,
+        "status": "completed",
+        "tags": feedback.get("Keywords", []),
+        "notes": "Generated via Guided Profile Builder",
+        "created_at": get_malaysia_time(),
+    }
+    await resumes.insert_one(doc)
+    
+    return {"feedback": feedback, "job_title": final_job_title}
 
 @router.get("/my")
 async def my_resumes(current=Depends(get_current_user)):
