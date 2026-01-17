@@ -21,6 +21,7 @@ def build_resume_prompt(text: str, context: str = "") -> str:
 
     prompt += (
         "The JSON must have the following keys:\n"
+        "- \"IsResume\": a boolean (true/false) indicating if the provided text is actually a professional resume or CV.\n"
         "- \"Score\": an integer from 0 to 100 representing the overall quality.\n"
         "- \"Advantages\": a list of strings highlighting strong points.\n"
         "- \"Disadvantages\": a list of strings highlighting weak points.\n"
@@ -28,6 +29,7 @@ def build_resume_prompt(text: str, context: str = "") -> str:
         "- \"Keywords\": a list of 10-15 essential skills and industry keywords strictly extracted from the resume text.\n"
         "- \"Location\": a string representing the user's current city or state (e.g., 'Kuala Lumpur', 'Petaling Jaya') extracted from the resume. If not found, return an empty string.\n"
         "- \"DetectedJobTitle\": a string representing the most likely target job title for this user based on their experience and skills (e.g., 'Software Engineer', 'Data Scientist'). If not clear, return an empty string.\n\n"
+        "IMPORTANT: If \"IsResume\" is false, set Score to 0 and all lists to empty, but still return a valid JSON.\n\n"
         "Resume Text:\n" + text
     )
     return prompt
@@ -36,10 +38,15 @@ def parse_json_response(resp: str) -> Dict[str, Any]:
     # Remove any markdown code block markers if present
     clean_resp = re.sub(r'```json\s*|\s*```', '', resp).strip()
     try:
-        return json.loads(clean_resp)
+        data = json.loads(clean_resp)
+        # Ensure IsResume exists
+        if "IsResume" not in data:
+            data["IsResume"] = True
+        return data
     except json.JSONDecodeError:
         # Fallback if JSON is malformed
         return {
+            "IsResume": True,
             "Score": 50,
             "Advantages": ["Could not parse detailed advantages."],
             "Disadvantages": ["Could not parse detailed disadvantages."],
@@ -52,6 +59,7 @@ def parse_json_response(resp: str) -> Dict[str, Any]:
 def get_feedback(text: str) -> Dict[str, Any]:
     if not MISTRAL_API_KEY:
         return {
+            "IsResume": True,
             "Score": 75,
             "Advantages": ["Clear structure", "Relevant experience"],
             "Disadvantages": ["Generic statements", "Missing quantified achievements"],

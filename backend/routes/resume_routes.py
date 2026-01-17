@@ -49,6 +49,13 @@ async def upload_resume(
         raise HTTPException(status_code=400, detail=str(e))
     os.remove(tmp_path)
     feedback = get_feedback(text)
+
+    # Validate if it's actually a resume
+    if not feedback.get("IsResume", True):
+        raise HTTPException(
+            status_code=400, 
+            detail="The uploaded file does not appear to be a professional resume or CV. Please upload a valid resume."
+        )
     
     # Use AI detected job title if it's available and the provided one is generic
     ai_detected_title = feedback.get("DetectedJobTitle")
