@@ -2,7 +2,7 @@
 
 ICP is an AI-powered career preparation platform designed to help job seekers master their interview skills and optimize their professional profiles. By combining advanced AI analysis with real-world job data, ICP provides a comprehensive ecosystem for career advancement.
 
-## 🌟 Key Features
+## 🌟 Key Features 
 
 ### 1. AI Resume Analysis
 *   **Intelligent Scoring**: Get a 0-100 score based on industry standards.
