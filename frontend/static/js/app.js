@@ -1,3 +1,26 @@
+// Immediate Global Sidebar Logic (defined early to prevent race conditions)
+window.handleMobileMenu = function() {
+  console.log("handleMobileMenu called");
+  const sidebar = document.getElementById("mobileSidebar");
+  const overlay = document.getElementById("sidebarOverlay");
+  
+  if (sidebar && overlay) {
+    const isActive = sidebar.classList.contains("active");
+    if (isActive) {
+      sidebar.classList.remove("active");
+      overlay.classList.remove("active");
+      document.body.style.overflow = ""; // Enable scroll
+    } else {
+      sidebar.classList.add("active");
+      overlay.classList.add("active");
+      document.body.style.overflow = "hidden"; // Disable scroll
+    }
+    console.log("Sidebar active state:", !isActive);
+  } else {
+    console.error("Mobile sidebar elements not found:", { sidebar: !!sidebar, overlay: !!overlay });
+  }
+};
+
 const state = {
   token: localStorage.getItem("token") || "",
   
@@ -72,7 +95,13 @@ function decodeToken(token) {
   }
 }
 
-window.icp = { state, logout, decodeToken };
+// Initialize icp object with all required properties
+if (!window.icp) {
+  window.icp = {};
+}
+window.icp.state = state;
+window.icp.logout = logout;
+window.icp.decodeToken = decodeToken;
 
 // Global Startup Check: Clear sessions if server has restarted
 (function checkStartup() {

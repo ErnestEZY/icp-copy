@@ -40,36 +40,70 @@
   <nav class="navbar navbar-dark glass-nav">
     <div class="container d-flex align-items-center justify-content-between">
       <div class="d-flex align-items-center gap-3">
+        <button class="hamburger-btn d-xl-none me-2" onclick="window.handleMobileMenu()" title="Toggle navigation menu">
+          <i class="bi bi-list"></i>
+        </button>
         <a class="navbar-brand fw-bold fs-4 mb-0 me-0" href="/">
           <span class="text-primary">I</span>CP
         </a>
-        <div class="d-flex gap-1">
+        <div class="d-flex gap-1 d-none d-xl-flex">
           <a class="btn btn-primary btn-sm px-2" href="/static/pages/dashboard.html" title="Dashboard">
-            <i class="bi bi-speedometer2 d-md-none"></i>
-            <span class="d-none d-md-inline">Dashboard</span>
+            <span class="">Dashboard</span>
           </a>
           <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/find-jobs.html" title="Search Job">
-            <i class="bi bi-search d-md-none"></i>
-            <span class="d-none d-md-inline">Search Job</span>
+            <span class="">Search Job</span>
           </a>
           <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/history.html" title="View History">
-            <i class="bi bi-clock-history d-md-none"></i>
-            <span class="d-none d-md-inline">View History</span>
+            <span class="">View History</span>
           </a>
           <a class="btn btn-outline-light btn-sm px-2" href="/static/pages/interview.html" title="Mock Interview">
-              <i class="bi bi-play-circle d-md-none"></i>
-              <span class="d-none d-md-inline">Mock Interview</span>
+              <span class="">Mock Interview</span>
             </a>
         </div>
       </div>
       <div class="d-flex gap-2">
-          <button class="btn btn-outline-danger btn-sm px-2" onclick="icp.logout()" x-show="logged" title="Logout">
-          <i class="bi bi-box-arrow-right d-md-none"></i>
-          <span class="d-none d-md-inline">Logout</span>
+        <button class="btn btn-outline-danger btn-sm px-2 d-none d-xl-inline-block" onclick="icp.logout()" x-show="logged" title="Logout">
+          <span>Logout</span>
         </button>
       </div>
     </div>
   </nav>
+
+  <!-- Mobile Sidebar -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="window.handleMobileMenu()"></div>
+  <div class="mobile-sidebar" id="mobileSidebar">
+    <div class="sidebar-header">
+      <a class="navbar-brand fw-bold fs-4 mb-0" href="/">
+        <span class="text-primary">I</span>CP
+      </a>
+      <button class="btn btn-link text-white p-0" onclick="window.handleMobileMenu()" title="Close navigation menu">
+        <i class="bi bi-x-lg fs-4"></i>
+      </button>
+    </div>
+    <div class="sidebar-nav">
+      <a href="/static/pages/dashboard.html" class="sidebar-link active" title="Go to Dashboard">
+        <i class="bi bi-speedometer2"></i>
+        <span>Dashboard</span>
+      </a>
+      <a href="/static/pages/find-jobs.html" class="sidebar-link" title="Search for Jobs">
+        <i class="bi bi-search"></i>
+        <span>Search Job</span>
+      </a>
+      <a href="/static/pages/history.html" class="sidebar-link" title="View Interview History">
+        <i class="bi bi-clock-history"></i>
+        <span>View History</span>
+      </a>
+      <a href="/static/pages/interview.html" class="sidebar-link" title="Start Mock Interview">
+        <i class="bi bi-play-circle"></i>
+        <span>Mock Interview</span>
+      </a>
+      <hr class="border-secondary opacity-25 my-3">
+      <a href="javascript:void(0)" onclick="icp.logout()" class="sidebar-link text-danger" title="Logout from session">
+        <i class="bi bi-box-arrow-right"></i>
+        <span>Logout</span>
+      </a>
+    </div>
+  </div>
   <div id="dashboardApp" class="container py-4">
     <!-- Dashboard Loading Spinner -->
     <template x-if="isLoading">

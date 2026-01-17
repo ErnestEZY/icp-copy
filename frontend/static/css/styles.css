@@ -822,6 +822,108 @@ body {
   padding: 1rem 1rem 0.75rem 1rem; 
 }
 .interviewer-avatar { width: 35px; height: 35px; }
+
+/* --- Device-specific Visibility --- */
+/* Hide the admin portal button on devices smaller than a 14-inch laptop.
+   We use 1920px as the threshold to exclude tablets and smaller laptops. */
+@media (max-width: 1450px) {
+  .admin-portal-btn {
+    display: none !important;
+  }
+}
+
+/* --- Sidebar Hamburger Menu (Mobile Only) --- */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  z-index: 1040;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+
+.sidebar-overlay.active {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.mobile-sidebar {
+  position: fixed;
+  top: 0;
+  left: -280px;
+  width: 280px;
+  height: 100%;
+  background: #0f172a;
+  z-index: 1050;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+}
+
+.mobile-sidebar.active {
+  left: 0 !important;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.sidebar-link:hover, .sidebar-link.active {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.sidebar-link i {
+  font-size: 1.25rem;
+}
+
+.hamburger-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
+@media (max-width: 1199px) {
+  .hamburger-btn {
+    display: block;
+  }
+  .glass-nav .container .d-flex.gap-1 {
+    display: none !important;
+  }
+}
+
 .interviewer-label { font-size: 0.75rem; line-height: 1; }
 .interviewer-status { font-size: 0.65rem; }
 .question-badge { font-size: 0.7rem; }
@@ -839,6 +941,7 @@ body {
 .job-description {
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
