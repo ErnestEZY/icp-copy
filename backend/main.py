@@ -13,7 +13,7 @@ from .routes.admin_routes import router as admin_router
 from .routes.job_routes import router as job_router
 from .services.rag_engine import rag_engine
 from .services.utils import get_malaysia_time
-from .db import interviews, pending_users, client
+from .db import interviews, pending_users, get_client
 import os
 
 limiter = Limiter(key_func=get_remote_address)
@@ -64,6 +64,7 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 @app.on_event("startup")
 async def startup():
     # Check DB Connection
+    client = get_client()
     if client:
         try:
             await client.admin.command('ping')
@@ -96,6 +97,7 @@ async def startup_id():
 @app.get("/api/health")
 async def health_check():
     health = {"status": "ok", "database": "unknown"}
+    client = get_client()
     if client:
         try:
             await client.admin.command('ping')

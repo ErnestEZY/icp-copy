@@ -1,52 +1,85 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from .config import MONGO_URI, DB_NAME
 import certifi
-import sys
+import asyncio
 
-if not MONGO_URI or "your_mongodb_uri_here" in MONGO_URI:
-    print("CRITICAL: MONGO_URI is not set or contains placeholder value!")
-    # We don't exit here to allow the app to potentially start and show errors elsewhere
-    # but most DB operations will fail.
+class DatabaseManager:
+    _client = None
+    _db = None
 
-try:
-    client = AsyncIOMotorClient(
-        MONGO_URI, 
-        tlsCAFile=certifi.where(),
-        serverSelectionTimeoutMS=5000, 
-        connectTimeoutMS=10000
-    )
-    db = client[DB_NAME]
-except Exception as e:
-    print(f"ERROR: Failed to initialize MongoDB client: {e}")
-    client = None
-    db = None
+    @classmethod
+    def get_client(cls):
+        if cls._client is None:
+            if not MONGO_URI or "your_mongodb_uri_here" in MONGO_URI:
+                print("CRITICAL: MONGO_URI is not set!")
+                return None
+            
+            try:
+                # Motor will use the current running loop if we don't pass one
+                cls._client = AsyncIOMotorClient(
+                    MONGO_URI,
+                    tlsCAFile=certifi.where(),
+                    serverSelectionTimeoutMS=5000,
+                    connectTimeoutMS=10000,
+                    # Crucial for serverless: don't pre-bind to a loop
+                    io_loop=asyncio.get_event_loop() 
+                )
+            except Exception as e:
+                print(f"ERROR: Failed to initialize MongoDB client: {e}")
+                return None
+        return cls._client
 
-# Proxy class to catch attempts to use the DB when it's not initialized
-class DBErrorProxy:
+    @classmethod
+    def get_db(cls):
+        if cls._db is None:
+            client = cls.get_client()
+            if client is not None:
+                cls._db = client[DB_NAME]
+        return cls._db
+
+# Proxy objects that delegate to the actual collection on every access
+# This ensures we always use the current loop's client
+class CollectionProxy:
+    def __init__(self, collection_name):
+        self._name = collection_name
+
+    def _get_col(self):
+        db = DatabaseManager.get_db()
+        if db is None:
+            raise RuntimeError(f"MongoDB not initialized. Tried to access {self._name}")
+        return db[self._name]
+
     def __getattr__(self, name):
-        # This catches .find_one, .insert_one, etc.
-        def method(*args, **kwargs):
-            raise RuntimeError(f"MongoDB not initialized (tried to call {name}). Check MONGO_URI environment variable in Vercel settings.")
-        return method
+        return getattr(self._get_col(), name)
 
-    def __getitem__(self, name):
-        # This catches db["users"]
-        return self
+# These will be imported by other files
+users = CollectionProxy("users")
+pending_users = CollectionProxy("pending_users")
+resumes = CollectionProxy("resumes")
+interviews = CollectionProxy("interviews")
+usage = CollectionProxy("usage")
+audit_logs = CollectionProxy("audit_logs")
 
-if db is None:
-    db_proxy = DBErrorProxy()
-    users = db_proxy
-    pending_users = db_proxy
-    resumes = db_proxy
-    interviews = db_proxy
-    usage = db_proxy
-    audit_logs = db_proxy
-    fs = None
-else:
-    users = db["users"]
-    pending_users = db["pending_users"]
-    resumes = db["resumes"]
-    interviews = db["interviews"]
-    usage = db["usage"]
-    audit_logs = db["audit_logs"]
-    fs = AsyncIOMotorGridFSBucket(db, bucket_name="resume_files")
+# For GridFS, we need a slightly different approach
+class GridFSProxy:
+    _fs = None
+    
+    @classmethod
+    def get_fs(cls):
+        if cls._fs is None:
+            db = DatabaseManager.get_db()
+            if db is not None:
+                cls._fs = AsyncIOMotorGridFSBucket(db, bucket_name="resume_files")
+        return cls._fs
+
+    def __getattr__(self, name):
+        fs = self.get_fs()
+        if fs is None:
+            raise RuntimeError("GridFS not initialized")
+        return getattr(fs, name)
+
+fs = GridFSProxy()
+
+# Export client for startup ping
+def get_client():
+    return DatabaseManager.get_client()
