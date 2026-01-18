@@ -10,10 +10,11 @@ from .config import JWT_SECRET, JWT_ALGORITHM, SUPERADMIN_EMAIL, SUPERADMIN_PASS
 from .db import users
 from .services.utils import get_malaysia_time
 
-# Session Clearing Mechanism:
-# By adding a unique salt on every startup, we invalidate all previously issued tokens.
-STARTUP_SALT = str(uuid.uuid4())
-DYNAMIC_JWT_SECRET = JWT_SECRET + STARTUP_SALT
+# Session Security:
+# We use the JWT_SECRET from environment variables.
+# In serverless environments (like Vercel), we avoid using a dynamic STARTUP_SALT
+# to ensure tokens remain valid across different function instances.
+DYNAMIC_JWT_SECRET = JWT_SECRET
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 

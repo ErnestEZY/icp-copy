@@ -6,26 +6,6 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/auth/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/resume/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/interview/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/admin/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/job/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
       "source": "/static/(.*)",
       "destination": "/frontend/static/$1"
     },
@@ -34,7 +14,7 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/((?!api|auth|resume|interview|admin|job|static|favicon.ico).*)",
+      "source": "/((?!api|static|favicon.ico).*)",
       "destination": "/frontend/index.html"
     }
   ],

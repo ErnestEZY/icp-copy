@@ -1,7 +1,8 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from .config import MONGO_URI, DB_NAME
+import certifi
 
-client = AsyncIOMotorClient(MONGO_URI)
+client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client[DB_NAME]
 
 users = db["users"]
