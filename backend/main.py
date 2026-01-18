@@ -61,6 +61,10 @@ app.include_router(job_router)
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
+# Static global startup_id to persist across serverless function re-executions
+# This prevents sessions from being cleared unnecessarily in environments like Vercel
+_GLOBAL_STARTUP_ID = "1737273600" # Static ID for production stability
+
 @app.on_event("startup")
 async def startup():
     # Check DB Connection
@@ -88,11 +92,12 @@ async def startup():
             await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
         except Exception:
             pass
-    app.state.startup_id = str(get_malaysia_time().timestamp())
+    # Use the global static ID instead of a per-process timestamp
+    app.state.startup_id = _GLOBAL_STARTUP_ID
 
 @app.get("/api/meta/startup_id")
 async def startup_id():
-    return {"startup_id": getattr(app.state, "startup_id", "")}
+    return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
 
 @app.get("/api/health")
 async def health_check():
