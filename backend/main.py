@@ -42,6 +42,14 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 async def startup():
     # await ensure_admin()
     
+    # Check DB Connection
+    try:
+        from .db import client
+        await client.admin.command('ping')
+        print("Successfully connected to MongoDB")
+    except Exception as e:
+        print(f"CRITICAL: Failed to connect to MongoDB: {e}")
+
     # Create TTL index for pending_users (expires after 15 minutes)
     try:
         await pending_users.create_index("created_at", expireAfterSeconds=900)
@@ -54,7 +62,8 @@ async def startup():
         await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
     except Exception:
         pass
-    app.state.startup_id = str(get_malaysia_time().timestamp())
+    # In Serverless environments, we use a stable ID to prevent unnecessary logouts on cold starts
+    app.state.startup_id = os.getenv("VERCEL_DEPLOYMENT_ID", "stable-deployment")
 
 @app.get("/api/meta/startup_id")
 async def startup_id():

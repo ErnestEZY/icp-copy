@@ -20,7 +20,7 @@
       "destination": "/backend/main.py"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api|static).*)",
       "destination": "/frontend/index.html"
     }
   ]
