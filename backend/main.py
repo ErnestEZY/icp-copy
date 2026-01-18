@@ -93,6 +93,19 @@ async def startup():
 async def startup_id():
     return {"startup_id": getattr(app.state, "startup_id", "")}
 
+@app.get("/api/health")
+async def health_check():
+    health = {"status": "ok", "database": "unknown"}
+    if client:
+        try:
+            await client.admin.command('ping')
+            health["database"] = "connected"
+        except Exception as e:
+            health["database"] = f"error: {str(e)}"
+    else:
+        health["database"] = "not_initialized"
+    return health
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=204)
