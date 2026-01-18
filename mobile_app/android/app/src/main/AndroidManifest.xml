@@ -2,7 +2,7 @@
     package="com.ernestezy.icp.interview_coach_app">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="interview_coach_app"
+        android:label="Interview Coach Prep"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
