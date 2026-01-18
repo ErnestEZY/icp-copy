@@ -61,9 +61,7 @@ class WindowsFallbackPage extends StatelessWidget {
               icon: const Icon(Icons.open_in_new),
               label: const Text('Open in Browser'),
               onPressed: () async {
-                final Uri url = Uri.parse(
-                  'https://icp-copy-n6yjyaij4-ernestezys-projects.vercel.app/',
-                );
+                final Uri url = Uri.parse('https://icp-copy.vercel.app/');
                 if (!await launchUrl(
                   url,
                   mode: LaunchMode.externalApplication,
@@ -156,9 +154,7 @@ Page resource error:
           ).showSnackBar(SnackBar(content: Text(message.message)));
         },
       )
-      ..loadRequest(
-        Uri.parse('https://icp-copy-n6yjyaij4-ernestezys-projects.vercel.app/'),
-      );
+      ..loadRequest(Uri.parse('https://icp-copy.vercel.app/'));
 
     // #docregion platform_features
     if (controller.platform is AndroidWebViewController) {
