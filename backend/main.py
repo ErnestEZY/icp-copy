@@ -1,21 +1,19 @@
-from fastapi import FastAPI, Request
+import os
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from starlette.responses import HTMLResponse
-from .routes.auth_routes import router as auth_router
-from .routes.resume_routes import router as resume_router
-from .routes.interview_routes import router as interview_router
-from .routes.admin_routes import router as admin_router
-from .routes.job_routes import router as job_router
-from .auth import ensure_admin
-from .services.rag_engine import rag_engine
-from .services.utils import get_malaysia_time
-from .db import interviews, pending_users
-from datetime import datetime, timezone, timedelta
-from fastapi import Response
+
+# Use absolute-style imports for Vercel compatibility
+from routes.auth_routes import router as auth_router
+from routes.resume_routes import router as resume_router
+from routes.interview_routes import router as interview_router
+from routes.admin_routes import router as admin_router
+from routes.job_routes import router as job_router
+from services.rag_engine import rag_engine
+from services.utils import get_malaysia_time
+from db import interviews, pending_users
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
@@ -36,35 +34,6 @@ app.include_router(interview_router)
 app.include_router(admin_router)
 app.include_router(job_router)
 
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
-
-@app.on_event("startup")
-async def startup():
-    # await ensure_admin()
-    
-    # Check DB Connection
-    try:
-        from .db import client
-        await client.admin.command('ping')
-        print("Successfully connected to MongoDB")
-    except Exception as e:
-        print(f"CRITICAL: Failed to connect to MongoDB: {e}")
-
-    # Create TTL index for pending_users (expires after 15 minutes)
-    try:
-        await pending_users.create_index("created_at", expireAfterSeconds=900)
-    except Exception as e:
-        print(f"Error creating TTL index for pending_users: {e}")
-
-    # Initialize RAG Engine during startup to pre-download models and build index
-    rag_engine.initialize()
-    try:
-        await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
-    except Exception:
-        pass
-    # In Serverless environments, we use a stable ID to prevent unnecessary logouts on cold starts
-    app.state.startup_id = os.getenv("VERCEL_DEPLOYMENT_ID", "stable-deployment")
-
 @app.get("/api/meta/startup_id")
 async def startup_id():
     return {"startup_id": getattr(app.state, "startup_id", "")}
@@ -72,25 +41,3 @@ async def startup_id():
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=204)
-
-# Catch-all to serve index.html for any unknown routes (SPA support)
-# This MUST be the last route defined
-@app.get("/{full_path:path}", response_class=HTMLResponse)
-async def catch_all(request: Request, full_path: str):
-    # If the path is empty, serve index.html
-    if not full_path:
-        with open("frontend/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    
-    # Otherwise, check if it's a request for an API (let the router handle it)
-    if full_path.startswith("api/"):
-        # This is a bit of a trick: if it's an API route but reached here, 
-        # it means the router didn't match it.
-        return Response(status_code=404)
-        
-    # Default to index.html for all other routes
-    try:
-        with open("frontend/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except FileNotFoundError:
-        return HTMLResponse("index.html not found", status_code=404)
