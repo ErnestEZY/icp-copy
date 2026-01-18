@@ -23,8 +23,15 @@ except Exception as e:
 
 # Proxy class to catch attempts to use the DB when it's not initialized
 class DBErrorProxy:
+    def __getattr__(self, name):
+        # This catches .find_one, .insert_one, etc.
+        def method(*args, **kwargs):
+            raise RuntimeError(f"MongoDB not initialized (tried to call {name}). Check MONGO_URI environment variable in Vercel settings.")
+        return method
+
     def __getitem__(self, name):
-        raise RuntimeError("MongoDB not initialized. Check MONGO_URI environment variable.")
+        # This catches db["users"]
+        return self
 
 if db is None:
     db_proxy = DBErrorProxy()

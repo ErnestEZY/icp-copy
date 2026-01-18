@@ -20,6 +20,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
+        print(f"DEBUG: Verifying password. Hash length: {len(hashed_password) if hashed_password else 0}")
         password_bytes = plain_password.encode('utf-8')
         hashed_bytes = hashed_password.encode('utf-8')
         
@@ -27,14 +28,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         try:
             if bcrypt.checkpw(password_bytes, hashed_bytes):
                 return True
-        except ValueError:
-            # This might happen if we try to check a hash that was created with pre-hashing
+        except Exception as e:
+            print(f"DEBUG: Direct bcrypt check failed: {e}")
             pass
             
         # Try verification with SHA256 pre-hash
         pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
-        return bcrypt.checkpw(pre_hashed, hashed_bytes)
-    except Exception:
+        result = bcrypt.checkpw(pre_hashed, hashed_bytes)
+        print(f"DEBUG: Pre-hash bcrypt check result: {result}")
+        return result
+    except Exception as e:
+        print(f"DEBUG: Password verification error: {e}")
         return False
 
 def hash_password(password: str) -> str:
