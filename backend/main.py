@@ -39,24 +39,29 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 @app.on_event("startup")
 async def startup():
     # Check DB Connection
-    try:
-        await client.admin.command('ping')
-        print("Successfully connected to MongoDB")
-    except Exception as e:
-        print(f"CRITICAL: Failed to connect to MongoDB: {e}")
+    if client:
+        try:
+            await client.admin.command('ping')
+            print("Successfully connected to MongoDB")
+        except Exception as e:
+            print(f"CRITICAL: Failed to connect to MongoDB: {e}")
+    else:
+        print("CRITICAL: MongoDB client not initialized")
 
     # Create TTL index for pending_users (expires after 15 minutes)
-    try:
-        await pending_users.create_index("created_at", expireAfterSeconds=900)
-    except Exception as e:
-        print(f"Error creating TTL index for pending_users: {e}")
+    if pending_users is not None:
+        try:
+            await pending_users.create_index("created_at", expireAfterSeconds=900)
+        except Exception as e:
+            print(f"Error creating TTL index for pending_users: {e}")
 
     # Initialize RAG Engine during startup
     rag_engine.initialize()
-    try:
-        await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
-    except Exception:
-        pass
+    if interviews is not None:
+        try:
+            await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
+        except Exception:
+            pass
     app.state.startup_id = str(get_malaysia_time().timestamp())
 
 @app.get("/api/meta/startup_id")
