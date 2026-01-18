@@ -8,13 +8,8 @@ class RAGEngine:
     Uses a simple keyword-based ranking instead of heavy vector embeddings (PyTorch/FAISS).
     This reduces memory usage from >1GB to <50MB.
     """
-    def __init__(self, docs_dir: str = None):
-        if docs_dir is None:
-            # Make path relative to this file
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            self.docs_dir = os.path.join(base_dir, "data", "rag_docs")
-        else:
-            self.docs_dir = docs_dir
+    def __init__(self, docs_dir: str = "backend/data/rag_docs"):
+        self.docs_dir = docs_dir
         self.documents = []
         self._initialized = False
 
