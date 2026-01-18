@@ -50,7 +50,7 @@ def create_access_token(sub: str, role: str, expires_delta: Optional[timedelta] 
         expire = now + expires_delta
     else:
         expire = now + timedelta(seconds=JWT_EXPIRATION_SECONDS)
-    payload = {"sub": sub, "role": role, "exp": expire, "sid": STARTUP_SALT}
+    payload = {"sub": sub, "role": role, "exp": expire}
     return jwt.encode(payload, DYNAMIC_JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 from bson import ObjectId
