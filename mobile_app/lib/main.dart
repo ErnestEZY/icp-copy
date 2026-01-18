@@ -5,6 +5,9 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 // Import for iOS features.
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 
 void main() {
   runApp(const MyApp());
@@ -161,6 +164,41 @@ Page resource error:
       AndroidWebViewController.enableDebugging(true);
       (controller.platform as AndroidWebViewController)
           .setMediaPlaybackRequiresUserGesture(false);
+
+      // Add file upload support for Android
+      (controller.platform as AndroidWebViewController).setOnShowFileSelector((
+        params,
+      ) async {
+        try {
+          // Check/Request storage permissions
+          if (Platform.isAndroid) {
+            if (await Permission.storage.request().isGranted ||
+                await Permission.photos.request().isGranted ||
+                await Permission.videos.request().isGranted) {
+              // Permission granted, proceed with file picker
+            } else {
+              debugPrint('Storage permission denied');
+              // Try to pick anyway as some Android versions don't need explicit storage perm for picker
+            }
+          }
+
+          final result = await FilePicker.platform.pickFiles(
+            allowMultiple: params.mode == FileSelectorMode.openMultiple,
+            type: FileType.any,
+          );
+
+          if (result != null && result.files.isNotEmpty) {
+            final urls = result.files
+                .where((file) => file.path != null)
+                .map((file) => Uri.file(file.path!).toString())
+                .toList();
+            return urls;
+          }
+        } catch (e) {
+          debugPrint('Error picking files: $e');
+        }
+        return [];
+      });
     }
     // #enddocregion platform_features
 
