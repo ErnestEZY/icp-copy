@@ -6,8 +6,6 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'dart:io';
 
 void main() {
   runApp(const MyApp());
@@ -64,7 +62,9 @@ class WindowsFallbackPage extends StatelessWidget {
               icon: const Icon(Icons.open_in_new),
               label: const Text('Open in Browser'),
               onPressed: () async {
-                final Uri url = Uri.parse('https://icp-copy.vercel.app/');
+                final Uri url = Uri.parse(
+                  'https://interview-coach-prep.onrender.com/',
+                );
                 if (!await launchUrl(
                   url,
                   mode: LaunchMode.externalApplication,
@@ -157,7 +157,7 @@ Page resource error:
           ).showSnackBar(SnackBar(content: Text(message.message)));
         },
       )
-      ..loadRequest(Uri.parse('https://icp-copy.vercel.app/'));
+      ..loadRequest(Uri.parse('https://interview-coach-prep.onrender.com/'));
 
     // #docregion platform_features
     if (controller.platform is AndroidWebViewController) {
@@ -165,37 +165,20 @@ Page resource error:
       (controller.platform as AndroidWebViewController)
           .setMediaPlaybackRequiresUserGesture(false);
 
-      // Add file upload support for Android
+      // This is the correct method for webview_flutter_android 4.10.11+
+      (controller.platform as AndroidWebViewController)
+          .setOnPlatformPermissionRequest((request) async {
+            request.grant();
+          });
+
       (controller.platform as AndroidWebViewController).setOnShowFileSelector((
-        params,
+        FileSelectorParams params,
       ) async {
-        try {
-          // Check/Request storage permissions
-          if (Platform.isAndroid) {
-            if (await Permission.storage.request().isGranted ||
-                await Permission.photos.request().isGranted ||
-                await Permission.videos.request().isGranted) {
-              // Permission granted, proceed with file picker
-            } else {
-              debugPrint('Storage permission denied');
-              // Try to pick anyway as some Android versions don't need explicit storage perm for picker
-            }
-          }
+        final result = await FilePicker.platform.pickFiles();
 
-          final result = await FilePicker.platform.pickFiles(
-            allowMultiple: params.mode == FileSelectorMode.openMultiple,
-            type: FileType.any,
-          );
-
-          if (result != null && result.files.isNotEmpty) {
-            final urls = result.files
-                .where((file) => file.path != null)
-                .map((file) => Uri.file(file.path!).toString())
-                .toList();
-            return urls;
-          }
-        } catch (e) {
-          debugPrint('Error picking files: $e');
+        if (result != null && result.files.single.path != null) {
+          final String path = result.files.single.path!;
+          return [Uri.file(path).toString()];
         }
         return [];
       });
