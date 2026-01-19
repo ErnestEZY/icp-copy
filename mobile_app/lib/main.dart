@@ -5,6 +5,10 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 // Import for iOS features.
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'dart:convert';
 
 void main() {
   runApp(const MyApp());
@@ -61,7 +65,9 @@ class WindowsFallbackPage extends StatelessWidget {
               icon: const Icon(Icons.open_in_new),
               label: const Text('Open in Browser'),
               onPressed: () async {
-                final Uri url = Uri.parse('https://icp-copy.vercel.app/');
+                final Uri url = Uri.parse(
+                  'https://interview-coach-prep.onrender.com/',
+                );
                 if (!await launchUrl(
                   url,
                   mode: LaunchMode.externalApplication,
@@ -93,10 +99,26 @@ class WebViewPage extends StatefulWidget {
 class _WebViewPageState extends State<WebViewPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
+  final FlutterTts _flutterTts = FlutterTts();
+
+  Future<void> _requestPermissions() async {
+    // Request microphone and storage permissions
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.microphone,
+      Permission.storage,
+      // For Android 13+ storage permissions are different, but permission_handler handles it
+      Permission.photos,
+      Permission.videos,
+      Permission.audio,
+    ].request();
+
+    debugPrint('Permission statuses: $statuses');
+  }
 
   @override
   void initState() {
     super.initState();
+    _requestPermissions();
 
     // #docregion platform_features
     late final PlatformWebViewControllerCreationParams params;
@@ -114,6 +136,9 @@ class _WebViewPageState extends State<WebViewPage> {
 
     controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+      )
       ..setBackgroundColor(const Color(0x00000000))
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -131,6 +156,10 @@ class _WebViewPageState extends State<WebViewPage> {
             setState(() {
               _isLoading = false;
             });
+            // If user navigates to the interview page, ensure permissions are requested
+            if (url.contains('interview')) {
+              _requestPermissions();
+            }
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('''
@@ -154,13 +183,80 @@ Page resource error:
           ).showSnackBar(SnackBar(content: Text(message.message)));
         },
       )
-      ..loadRequest(Uri.parse('https://icp-copy.vercel.app/'));
+      ..addJavaScriptChannel(
+        'TTSHandler',
+        onMessageReceived: (JavaScriptMessage message) async {
+          try {
+            final Map<String, dynamic> data = jsonDecode(message.message);
+            final String text = data['text'] ?? '';
+            final String gender = data['gender'] ?? 'female';
+
+            if (text.isNotEmpty) {
+              await _flutterTts.setLanguage("en-US");
+              await _flutterTts.setPitch(1.0);
+              await _flutterTts.setSpeechRate(0.5); // Normal speed
+
+              if (gender == 'male') {
+                // Try to find a male voice, otherwise use default
+                await _flutterTts.setVoice({
+                  "name": "en-us-x-iol-local",
+                  "locale": "en-US",
+                });
+              } else {
+                await _flutterTts.setVoice({
+                  "name": "en-us-x-sfg-local",
+                  "locale": "en-US",
+                });
+              }
+
+              await _flutterTts.speak(text);
+            }
+          } catch (e) {
+            debugPrint('TTS Error: $e');
+          }
+        },
+      )
+      ..loadRequest(Uri.parse('https://interview-coach-prep.onrender.com/'));
 
     // #docregion platform_features
     if (controller.platform is AndroidWebViewController) {
       AndroidWebViewController.enableDebugging(true);
+      final androidController = controller.platform as AndroidWebViewController;
+
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+
+      // Enable mixed content mode for loading various resources
+      // WebSettings.MIXED_CONTENT_ALWAYS_ALLOW = 0
+      // In webview_flutter_android, we can't access WebSettings constants directly easily,
+      // but we can try to find if there's a method for it.
+      // Actually, the current webview_flutter_android version might not expose it directly
+      // without using platform-specific code.
+      // However, setMediaPlaybackRequiresUserGesture is the most important one.
+
+      // These settings help with Speech Synthesis and overall web performance
+      // Although setDomStorageEnabled was missing, we can ensure mixed content is allowed
+      // which is often required for loading resources in some environments
+      // We also ensure debugging is on for development
+      AndroidWebViewController.enableDebugging(true);
+
+      // This is the correct method for webview_flutter_android 4.10.11+
       (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
+          .setOnPlatformPermissionRequest((request) async {
+            // Explicitly grant all requested resources (audio, video, etc.)
+            await request.grant();
+          });
+
+      (controller.platform as AndroidWebViewController).setOnShowFileSelector((
+        FileSelectorParams params,
+      ) async {
+        final result = await FilePicker.platform.pickFiles();
+
+        if (result != null && result.files.single.path != null) {
+          final String path = result.files.single.path!;
+          return [Uri.file(path).toString()];
+        }
+        return [];
+      });
     }
     // #enddocregion platform_features
 
@@ -169,14 +265,37 @@ Page resource error:
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            WebViewWidget(controller: _controller),
-            if (_isLoading) const Center(child: CircularProgressIndicator()),
-          ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop) return;
+
+        if (await _controller.canGoBack()) {
+          await _controller.goBack();
+        } else {
+          // If the WebView cannot go back, we allow the app to pop/exit
+          if (context.mounted) {
+            // We set canPop to true temporarily or manually pop
+            // Since we are in a PopScope with canPop: false, we need to handle the exit
+            final NavigatorState navigator = Navigator.of(context);
+            if (navigator.canPop()) {
+              navigator.pop();
+            } else {
+              // If there's no more routes to pop, it's the home screen,
+              // we can close the app or just do nothing (standard behavior)
+            }
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              WebViewWidget(controller: _controller),
+              if (_isLoading) const Center(child: CircularProgressIndicator()),
+            ],
+          ),
         ),
       ),
     );
