@@ -8,9 +8,10 @@ function interview() {
     difficulty: "Intermediate",
     transcript: [],
     answer: "",
-    speaker: true,
+    speaker: localStorage.getItem('interview_speaker_enabled') !== 'false',
     voiceGender: localStorage.getItem('interview_voice_gender') || 'female',
-    mic: false,
+    mic: localStorage.getItem('interview_mic_enabled') === 'true',
+    recording: false,
     thinking: false,
     speaking: false,
     recognition: null,
@@ -110,8 +111,13 @@ function interview() {
       this.startTimer();
       this.checkAdmin();
 
-      // Pre-load voices for TTS
+      // Pre-load voices for TTS and warm up the engine
       if ('speechSynthesis' in window) {
+        // Some mobile browsers need a small utterance to "unlock" the audio context
+        const warmUp = new SpeechSynthesisUtterance("");
+        warmUp.volume = 0;
+        window.speechSynthesis.speak(warmUp);
+
         window.speechSynthesis.getVoices();
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
           window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
@@ -189,45 +195,86 @@ function interview() {
     },
     tts(text) {
       if (!this.speaker) return;
-      if (!('speechSynthesis' in window)) return;
+      if (!('speechSynthesis' in window)) {
+        console.error('Speech Synthesis not supported in this browser.');
+        return;
+      }
+      
+      // Log for debugging in WebView
+      if (window.Toaster) {
+        window.Toaster.postMessage('Speaking: ' + text.substring(0, 30) + '...');
+      }
+      
+      // Ensure voices are loaded
+      let voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        window.speechSynthesis.getVoices();
+        voices = window.speechSynthesis.getVoices();
+      }
+      
+      if (window.Toaster) {
+        window.Toaster.postMessage('Available voices: ' + voices.length);
+        if (voices.length > 0) {
+          window.Toaster.postMessage('First voice: ' + voices[0].name);
+        }
+      }
       
       // Cancel any ongoing speech
       window.speechSynthesis.cancel();
 
       const u = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices();
+      u.lang = 'en-US'; // Default lang
+      
+      // Priority for smoother male voices
+      let selectedVoice = null;
 
-      // Smoother settings
-      u.rate = 0.95; // Slightly slower for better clarity
-      u.pitch = 1.0;
+      if (voices.length > 0) {
+        if (this.voiceGender === 'male') {
+          selectedVoice = voices.find(v => v.lang.startsWith('en') && (
+            v.name.toLowerCase().includes('natural') && v.name.toLowerCase().includes('male') ||
+            v.name.toLowerCase().includes('guy') || 
+            v.name.toLowerCase().includes('google uk english male') ||
+            v.name.toLowerCase().includes('microsoft james') ||
+            v.name.toLowerCase().includes('david')
+          )) || voices.find(v => v.name.toLowerCase().includes('male') && v.lang.startsWith('en'));
+        } else {
+          selectedVoice = voices.find(v => v.lang.startsWith('en') && (
+            v.name.toLowerCase().includes('natural') && v.name.toLowerCase().includes('female') ||
+            v.name.toLowerCase().includes('aria') ||
+            v.name.toLowerCase().includes('google uk english female') ||
+            v.name.toLowerCase().includes('microsoft zira') ||
+            v.name.toLowerCase().includes('samantha')
+          )) || voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith('en'));
+        }
 
-      if (this.voiceGender === 'male') {
-        // Priority for smoother male voices
-        const maleVoice = voices.find(v => v.lang.startsWith('en') && (
-          v.name.toLowerCase().includes('natural') && v.name.toLowerCase().includes('male') ||
-          v.name.toLowerCase().includes('guy') || 
-          v.name.toLowerCase().includes('google uk english male') ||
-          v.name.toLowerCase().includes('microsoft james') ||
-          v.name.toLowerCase().includes('david')
-        )) || voices.find(v => v.name.toLowerCase().includes('male') && v.lang.startsWith('en'));
-        
-        if (maleVoice) u.voice = maleVoice;
-      } else {
-        // Priority for smoother female voices
-        const femaleVoice = voices.find(v => v.lang.startsWith('en') && (
-          v.name.toLowerCase().includes('natural') && v.name.toLowerCase().includes('female') ||
-          v.name.toLowerCase().includes('aria') ||
-          v.name.toLowerCase().includes('google uk english female') ||
-          v.name.toLowerCase().includes('microsoft zira') ||
-          v.name.toLowerCase().includes('samantha')
-        )) || voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith('en'));
-        
-        if (femaleVoice) u.voice = femaleVoice;
+        // If no gender-specific voice found, pick any English voice
+        if (!selectedVoice) {
+          selectedVoice = voices.find(v => v.lang.startsWith('en'));
+        }
+
+        if (selectedVoice) {
+          u.voice = selectedVoice;
+          u.lang = selectedVoice.lang;
+        }
       }
 
-      u.onstart = () => { this.speaking = true };
-      u.onend = () => { this.speaking = false };
-      u.onerror = () => { this.speaking = false };
+      u.rate = 0.95;
+      u.pitch = 1.0;
+      u.volume = 1.0;
+
+      u.onstart = () => { 
+        this.speaking = true;
+      };
+      u.onend = () => { 
+        this.speaking = false;
+      };
+      u.onerror = (e) => { 
+        console.error('Speech error:', e);
+        this.speaking = false;
+        if (window.Toaster) {
+          window.Toaster.postMessage('Speech error: ' + e.error);
+        }
+      };
       
       window.speechSynthesis.speak(u);
     },
@@ -261,12 +308,30 @@ function interview() {
       }
       if (!this.recognition) this.recognition = this.initRecognition();
       if (!this.recognition) return;
+
+      this.recognition.onstart = () => {
+        this.recording = true;
+      };
+      
       this.recognition.onresult = (e) => {
         const t = Array.from(e.results).map(r => r[0].transcript).join(' ').trim();
         if (t) this.answer = t;
       };
-      this.recognition.onerror = () => {
-        Swal.fire({ icon: 'error', title: 'Mic error', text: 'Please try recording again or type your answer.' });
+      this.recognition.onerror = (event) => {
+        this.recording = false;
+        console.error('Speech Recognition Error:', event.error);
+        let message = 'Please try recording again or type your answer.';
+        if (event.error === 'not-allowed') {
+          message = 'Microphone access denied. Please check your app permissions.';
+        } else if (event.error === 'no-speech') {
+          message = 'No speech detected. Please try speaking again.';
+        } else if (event.error === 'network') {
+          message = 'Network error during speech recognition.';
+        }
+        Swal.fire({ icon: 'error', title: 'Mic error', text: message });
+      };
+      this.recognition.onend = () => {
+        this.recording = false;
       };
       this.recognition.start();
     },
@@ -284,6 +349,17 @@ function interview() {
         });
         return;
       }
+
+      // Aggressive unlock for TTS on mobile - must be in direct user gesture
+      if (this.speaker && 'speechSynthesis' in window) {
+        const unlock = new SpeechSynthesisUtterance(" ");
+        unlock.volume = 0;
+        window.speechSynthesis.speak(unlock);
+        if (window.Toaster) {
+          window.Toaster.postMessage('TTS unlocked via user gesture');
+        }
+      }
+
       this.thinking = true;
       this.transcript = [];
       this.readinessScore = null;
