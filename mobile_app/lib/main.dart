@@ -200,6 +200,7 @@ Page resource error:
       ..addJavaScriptChannel(
         'TTSHandler',
         onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint('TTS Message received: ${message.message}');
           try {
             final Map<String, dynamic> data = jsonDecode(message.message);
             final String text = data['text'] ?? '';
@@ -208,25 +209,56 @@ Page resource error:
             if (text.isNotEmpty) {
               await _flutterTts.setLanguage("en-US");
               await _flutterTts.setPitch(1.0);
-              await _flutterTts.setSpeechRate(0.5); // Normal speed
+              await _flutterTts.setSpeechRate(0.5);
+              await _flutterTts.setVolume(1.0);
 
-              if (gender == 'male') {
-                // Try to find a male voice, otherwise use default
-                await _flutterTts.setVoice({
-                  "name": "en-us-x-iol-local",
-                  "locale": "en-US",
-                });
-              } else {
-                await _flutterTts.setVoice({
-                  "name": "en-us-x-sfg-local",
-                  "locale": "en-US",
-                });
+              // Try to find a suitable voice based on gender
+              List<dynamic>? voices = await _flutterTts.getVoices;
+              if (voices != null) {
+                try {
+                  dynamic selectedVoice;
+                  if (gender == 'male') {
+                    // Look for male voice
+                    selectedVoice = voices.firstWhere(
+                      (v) =>
+                          v['name'].toString().toLowerCase().contains('male') ||
+                          v['name'].toString().toLowerCase().contains('iol'),
+                      orElse: () => null,
+                    );
+                  } else {
+                    // Look for female voice
+                    selectedVoice = voices.firstWhere(
+                      (v) =>
+                          v['name'].toString().toLowerCase().contains(
+                            'female',
+                          ) ||
+                          v['name'].toString().toLowerCase().contains('sfg'),
+                      orElse: () => null,
+                    );
+                  }
+
+                  if (selectedVoice != null) {
+                    debugPrint('Setting voice to: ${selectedVoice['name']}');
+                    await _flutterTts.setVoice({
+                      "name": selectedVoice['name'],
+                      "locale": selectedVoice['locale'],
+                    });
+                  }
+                } catch (e) {
+                  debugPrint('Error selecting specific voice: $e');
+                }
               }
 
-              await _flutterTts.speak(text);
+              debugPrint('Speaking: $text');
+              var result = await _flutterTts.speak(text);
+              if (result == 1) {
+                debugPrint('Speech started successfully');
+              } else {
+                debugPrint('Speech failed to start: $result');
+              }
             }
           } catch (e) {
-            debugPrint('TTS Error: $e');
+            debugPrint('TTS Error in Flutter: $e');
           }
         },
       )
