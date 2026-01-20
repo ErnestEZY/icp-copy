@@ -110,6 +110,7 @@ class _WebViewPageState extends State<WebViewPage> {
       Permission.photos,
       Permission.videos,
       Permission.audio,
+      Permission.camera,
     ].request();
 
     debugPrint('Permission statuses: $statuses');
@@ -174,6 +175,19 @@ Page resource error:
             return NavigationDecision.navigate;
           },
         ),
+      )
+      ..addJavaScriptChannel(
+        'PermissionHandler',
+        onMessageReceived: (JavaScriptMessage message) async {
+          final String permissionType = message.message;
+          if (permissionType == 'camera') {
+            await Permission.camera.request();
+          } else if (permissionType == 'microphone') {
+            await Permission.microphone.request();
+          }
+          // Refresh permissions after request
+          _requestPermissions();
+        },
       )
       ..addJavaScriptChannel(
         'Toaster',
