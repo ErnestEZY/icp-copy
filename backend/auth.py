@@ -10,17 +10,15 @@ from .config import JWT_SECRET, JWT_ALGORITHM, SUPERADMIN_EMAIL, SUPERADMIN_PASS
 from .db import users
 from .services.utils import get_malaysia_time
 
-# Session Security:
-# We use the JWT_SECRET from environment variables.
-# In serverless environments (like Vercel), we avoid using a dynamic STARTUP_SALT
-# to ensure tokens remain valid across different function instances.
-DYNAMIC_JWT_SECRET = JWT_SECRET
+# Session Clearing Mechanism:
+# By adding a unique salt on every startup, we invalidate all previously issued tokens.
+STARTUP_SALT = str(uuid.uuid4())
+DYNAMIC_JWT_SECRET = JWT_SECRET + STARTUP_SALT
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
-        print(f"DEBUG: Verifying password. Hash length: {len(hashed_password) if hashed_password else 0}")
         password_bytes = plain_password.encode('utf-8')
         hashed_bytes = hashed_password.encode('utf-8')
         
@@ -28,17 +26,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         try:
             if bcrypt.checkpw(password_bytes, hashed_bytes):
                 return True
-        except Exception as e:
-            print(f"DEBUG: Direct bcrypt check failed: {e}")
+        except ValueError:
+            # This might happen if we try to check a hash that was created with pre-hashing
             pass
             
         # Try verification with SHA256 pre-hash
         pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
-        result = bcrypt.checkpw(pre_hashed, hashed_bytes)
-        print(f"DEBUG: Pre-hash bcrypt check result: {result}")
-        return result
-    except Exception as e:
-        print(f"DEBUG: Password verification error: {e}")
+        return bcrypt.checkpw(pre_hashed, hashed_bytes)
+    except Exception:
         return False
 
 def hash_password(password: str) -> str:
@@ -54,13 +49,7 @@ def create_access_token(sub: str, role: str, expires_delta: Optional[timedelta] 
         expire = now + expires_delta
     else:
         expire = now + timedelta(seconds=JWT_EXPIRATION_SECONDS)
-    
-    # Use Unix timestamp for 'exp' to ensure compatibility and standard behavior
-    payload = {
-        "sub": sub, 
-        "role": role, 
-        "exp": int(expire.timestamp())
-    }
+    payload = {"sub": sub, "role": role, "exp": expire, "sid": STARTUP_SALT}
     return jwt.encode(payload, DYNAMIC_JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 from bson import ObjectId
@@ -94,6 +83,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             "id": str(doc["_id"]), 
             "email": doc["email"], 
             "role": role,
+            "name": doc.get("name"),
             "target_job_title": doc.get("target_job_title", ""),
             "target_location": doc.get("target_location", ""),
             "has_analyzed": doc.get("has_analyzed", False)
