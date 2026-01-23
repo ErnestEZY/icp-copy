@@ -25,8 +25,12 @@ class DatabaseManager:
                     socketTimeoutMS=20000,
                     # Crucial for serverless: don't pre-bind to a loop
                     maxPoolSize=10,
-                    minPoolSize=1
+                    minPoolSize=1,
+                    retryWrites=True,
+                    retryReads=True
                 )
+                # Important: check if the client is actually connected
+                # but don't await anything here since it's a classmethod
             except Exception as e:
                 print(f"ERROR: Failed to initialize MongoDB client: {e}")
                 return None
@@ -34,11 +38,11 @@ class DatabaseManager:
 
     @classmethod
     def get_db(cls):
-        if cls._db is None:
-            client = cls.get_client()
-            if client is not None:
-                cls._db = client[DB_NAME]
-        return cls._db
+        # Always try to get a fresh client reference to ensure it's bound to the current loop
+        client = cls.get_client()
+        if client is not None:
+            return client[DB_NAME]
+        return None
 
 # Proxy objects that delegate to the actual collection on every access
 # This ensures we always use the current loop's client

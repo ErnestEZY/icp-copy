@@ -142,38 +142,47 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     username = str(form_data.username).strip().lower()
     ip_address = request.client.host if request.client else "unknown"
     
-    # Try direct lookup first
-    user = await users.find_one({"email": username})
-    
-    # Fallback: case-insensitive lookup (in case of legacy data)
-    if not user:
-        import re
-        user = await users.find_one({"email": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+    try:
+        # Try direct lookup first
+        user = await users.find_one({"email": username})
         
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
-    
-    if not verify_password(form_data.password, user["password_hash"]):
-        print(f"DEBUG: Login failed for {username}: Incorrect password")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
-    
-    # Check if user is verified
-    if not user.get("is_verified", False):
-        print(f"DEBUG: Login failed for {username}: Email not verified")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="Email not verified. Please verify your email first."
-        )
+        # Fallback: case-insensitive lookup (in case of legacy data)
+        if not user:
+            import re
+            user = await users.find_one({"email": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+            
+        if not user:
+            print(f"DEBUG: Login failed - User not found: {username}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
+        
+        if not verify_password(form_data.password, user["password_hash"]):
+            print(f"DEBUG: Login failed for {username}: Incorrect password")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
+        
+        # Check if user is verified
+        if not user.get("is_verified", False):
+            print(f"DEBUG: Login failed for {username}: Email not verified")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Email not verified. Please verify your email first."
+            )
 
-    # Prevent admins from using normal user login flow
-    if user.get("role") in ("admin", "super_admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or super_admin cannot login here. Use admin interface.")
-    
-    # Update last login info
-    await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
-    
-    token = create_access_token(str(user["_id"]), user.get("role", "user"))
-    return Token(access_token=token)
+        # Prevent admins from using normal user login flow
+        if user.get("role") in ("admin", "super_admin"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or super_admin cannot login here. Use admin interface.")
+        
+        # Update last login info
+        await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
+        
+        token = create_access_token(str(user["_id"]), user.get("role", "user"))
+        return Token(access_token=token)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"CRITICAL LOGIN ERROR: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Database connection error or internal failure: {str(e)}")
 
 @router.post("/admin_login", response_model=Token, dependencies=[Depends(rate_limit)])
 async def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
