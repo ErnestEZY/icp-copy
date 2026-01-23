@@ -154,10 +154,12 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
     
     if not verify_password(form_data.password, user["password_hash"]):
+        print(f"DEBUG: Login failed for {username}: Incorrect password")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
     
     # Check if user is verified
     if not user.get("is_verified", False):
+        print(f"DEBUG: Login failed for {username}: Email not verified")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="Email not verified. Please verify your email first."
@@ -195,6 +197,7 @@ async def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = D
     ip_status = await check_admin_ip(username, ip_address)
     
     if not verify_password(form_data.password, user["password_hash"]):
+        print(f"DEBUG: Admin login failed for {username}: Incorrect password")
         await log_event(str(user["_id"]), username, "admin_login", ip_address, "failure", {"reason": "wrong_password"})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
     

@@ -12,8 +12,10 @@ from .services.utils import get_malaysia_time
 
 # Session Clearing Mechanism:
 # By adding a unique salt on every startup, we invalidate all previously issued tokens.
-STARTUP_SALT = str(uuid.uuid4())
-DYNAMIC_JWT_SECRET = JWT_SECRET + STARTUP_SALT
+# Note: For production stability in serverless environments, we now use a consistent secret
+# unless explicitly configured otherwise.
+STARTUP_SALT = "" 
+DYNAMIC_JWT_SECRET = JWT_SECRET
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -33,6 +35,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         # 1. Direct bcrypt check (no pre-hash)
         try:
             if bcrypt.checkpw(password_bytes, hashed_bytes):
+                print("DEBUG: Password verified via Strategy 1 (Direct)")
                 return True
         except Exception:
             pass
@@ -41,6 +44,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         try:
             pre_hex = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
             if bcrypt.checkpw(pre_hex, hashed_bytes):
+                print("DEBUG: Password verified via Strategy 2 (SHA256 Hex)")
                 return True
         except Exception:
             pass
@@ -49,14 +53,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         try:
             pre_bin = hashlib.sha256(password_bytes).digest()
             if bcrypt.checkpw(pre_bin, hashed_bytes):
+                print("DEBUG: Password verified via Strategy 3 (SHA256 Binary)")
                 return True
         except Exception:
             pass
 
-        # 4. Plain text comparison (LAST RESORT - only if hash doesn't look like bcrypt)
-        # Bcrypt hashes always start with $2
+        # 4. Plain text comparison (LAST RESORT)
         if not hashed_password.startswith('$2'):
             if plain_password == hashed_password:
+                print("DEBUG: Password verified via Strategy 4 (Plain Text)")
                 return True
 
         return False
@@ -77,14 +82,21 @@ def create_access_token(sub: str, role: str, expires_delta: Optional[timedelta] 
         expire = now + expires_delta
     else:
         expire = now + timedelta(seconds=JWT_EXPIRATION_SECONDS)
-    payload = {"sub": sub, "role": role, "exp": expire, "sid": STARTUP_SALT}
+    # Use Unix timestamp for exp as required by PyJWT
+    payload = {"sub": sub, "role": role, "exp": int(expire.timestamp())}
     return jwt.encode(payload, DYNAMIC_JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 from bson import ObjectId
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
-        payload = jwt.decode(token, DYNAMIC_JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        # First try with the primary secret
+        try:
+            payload = jwt.decode(token, DYNAMIC_JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.InvalidTokenError:
+            # Fallback to plain JWT_SECRET if they differ (unlikely now)
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            
         user_id = payload.get("sub")
         role = payload.get("role")
         if not user_id:
@@ -132,6 +144,7 @@ async def ensure_admin():
             "email": SUPERADMIN_EMAIL,
             "password_hash": hash_password(SUPERADMIN_PASSWORD),
             "role": "super_admin",
+            "is_verified": True,
             "created_at": now,
             "weekly_question_count": 0,
             "weekly_reset_at": now,

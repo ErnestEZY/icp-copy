@@ -67,7 +67,9 @@
                     let msg = 'Invalid admin credentials';
                     try {
                        msg = JSON.parse(event.detail.xhr.response).detail || msg;
-                    } catch(e){}
+                    } catch(e){
+                       msg = `Error ${event.detail.xhr.status}: ${event.detail.xhr.statusText || 'Connection failed'}`;
+                    }
                     Swal.fire({
                       icon: 'error',
                       title: 'Login Failed',

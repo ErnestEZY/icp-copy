@@ -87,7 +87,10 @@
                       if (msg.toLowerCase().includes('verify your email')) {
                         showVerifyLink = true;
                       }
-                    } catch(e){}
+                    } catch(e){
+                      // If not JSON, show the status text
+                      msg = `Error ${event.detail.xhr.status}: ${event.detail.xhr.statusText || 'Connection failed'}`;
+                    }
 
                     if (showVerifyLink) {
                       const email = document.querySelector('[name=username]').value;

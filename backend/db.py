@@ -16,13 +16,16 @@ class DatabaseManager:
             
             try:
                 # Motor will use the current running loop if we don't pass one
+                # For serverless, we want to ensure we don't leak connections
                 cls._client = AsyncIOMotorClient(
                     MONGO_URI,
                     tlsCAFile=certifi.where(),
                     serverSelectionTimeoutMS=5000,
                     connectTimeoutMS=10000,
+                    socketTimeoutMS=20000,
                     # Crucial for serverless: don't pre-bind to a loop
-                    io_loop=asyncio.get_event_loop() 
+                    maxPoolSize=10,
+                    minPoolSize=1
                 )
             except Exception as e:
                 print(f"ERROR: Failed to initialize MongoDB client: {e}")
