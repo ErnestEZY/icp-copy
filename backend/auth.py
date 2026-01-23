@@ -30,10 +30,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             # This might happen if we try to check a hash that was created with pre-hashing
             pass
             
-        # Try verification with SHA256 pre-hash
-        pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
-        return bcrypt.checkpw(pre_hashed, hashed_bytes)
-    except Exception:
+        # Try verification with SHA256 pre-hash (for newer hashes)
+        try:
+            pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
+            if bcrypt.checkpw(pre_hashed, hashed_bytes):
+                return True
+        except ValueError:
+            pass
+
+        return False
+    except Exception as e:
+        print(f"DEBUG: verify_password error: {e}")
         return False
 
 def hash_password(password: str) -> str:

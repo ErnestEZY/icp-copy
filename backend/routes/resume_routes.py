@@ -45,9 +45,13 @@ async def upload_resume(
     try:
         text, mime = extract_resume_text(tmp_path)
     except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise HTTPException(status_code=400, detail=f"Text extraction failed: {str(e)}")
+    
+    if os.path.exists(tmp_path):
         os.remove(tmp_path)
-        raise HTTPException(status_code=400, detail=str(e))
-    os.remove(tmp_path)
+        
     feedback = get_feedback(text)
 
     # Validate if it's actually a resume
