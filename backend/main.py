@@ -65,13 +65,22 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 # This prevents sessions from being cleared unnecessarily in environments like Vercel
 _GLOBAL_STARTUP_ID = "1737273600" # Static ID for production stability
 
+# Flag to prevent duplicate initializations in serverless
+_INITIALIZED = False
+
 @app.on_event("startup")
 async def startup():
+    global _INITIALIZED
+    if _INITIALIZED:
+        return
+    
+    print("INFO: Initializing application startup...")
+    
     # Check DB Connection
     client = get_client()
     if client:
         try:
-            await client.admin.command('ping')
+            await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
             print("Successfully connected to MongoDB")
         except Exception as e:
             print(f"CRITICAL: Failed to connect to MongoDB: {e}")
@@ -86,19 +95,28 @@ async def startup():
             print(f"Error creating TTL index for pending_users: {e}")
 
     # Initialize RAG Engine during startup
-    rag_engine.initialize()
+    try:
+        rag_engine.initialize()
+    except Exception as e:
+        print(f"Error initializing RAG engine: {e}")
     
     # Ensure Admin and cleanup interviews
-    from .auth import ensure_admin
-    await ensure_admin()
+    try:
+        from .auth import ensure_admin
+        await ensure_admin()
+    except Exception as e:
+        print(f"Error ensuring admin: {e}")
     
     if interviews is not None:
         try:
             await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
         except Exception:
             pass
+            
     # Use the global static ID instead of a per-process timestamp
     app.state.startup_id = _GLOBAL_STARTUP_ID
+    _INITIALIZED = True
+    print("INFO: Application startup complete.")
 
 @app.get("/api/meta/startup_id")
 async def startup_id():

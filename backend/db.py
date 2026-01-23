@@ -65,6 +65,8 @@ class CollectionProxy:
         return getattr(self._get_col(), name)
 
 # These will be imported by other files
+# Note: These proxies are safe to use globally as they resolve the database 
+# dynamically on every access, ensuring compatibility with serverless event loops.
 users = CollectionProxy("users")
 pending_users = CollectionProxy("pending_users")
 resumes = CollectionProxy("resumes")
