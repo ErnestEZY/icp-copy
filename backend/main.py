@@ -87,6 +87,11 @@ async def startup():
 
     # Initialize RAG Engine during startup
     rag_engine.initialize()
+    
+    # Ensure Admin and cleanup interviews
+    from .auth import ensure_admin
+    await ensure_admin()
+    
     if interviews is not None:
         try:
             await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})

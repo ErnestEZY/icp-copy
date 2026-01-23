@@ -142,7 +142,14 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     username = str(form_data.username).strip().lower()
     ip_address = request.client.host if request.client else "unknown"
     
+    # Try direct lookup first
     user = await users.find_one({"email": username})
+    
+    # Fallback: case-insensitive lookup (in case of legacy data)
+    if not user:
+        import re
+        user = await users.find_one({"email": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+        
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
     
@@ -172,7 +179,14 @@ async def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = D
     username = str(form_data.username).strip().lower()
     ip_address = request.client.host if request.client else "unknown"
     
+    # Try direct lookup first
     user = await users.find_one({"email": username})
+    
+    # Fallback: case-insensitive lookup
+    if not user:
+        import re
+        user = await users.find_one({"email": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+        
     if not user:
         await log_event(None, username, "admin_login", ip_address, "failure", {"reason": "user_not_found"})
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")

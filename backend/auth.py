@@ -19,24 +19,45 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
+        if not hashed_password:
+            return False
+            
         password_bytes = plain_password.encode('utf-8')
-        hashed_bytes = hashed_password.encode('utf-8')
         
-        # Try direct verification first (for existing hashes)
+        # Handle cases where hashed_password might be bytes already (from some DB drivers)
+        if isinstance(hashed_password, str):
+            hashed_bytes = hashed_password.encode('utf-8')
+        else:
+            hashed_bytes = hashed_password
+        
+        # 1. Direct bcrypt check (no pre-hash)
         try:
             if bcrypt.checkpw(password_bytes, hashed_bytes):
                 return True
-        except ValueError:
-            # This might happen if we try to check a hash that was created with pre-hashing
+        except Exception:
             pass
             
-        # Try verification with SHA256 pre-hash (for newer hashes)
+        # 2. SHA256 Hex Pre-hash (current IC strategy)
         try:
-            pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
-            if bcrypt.checkpw(pre_hashed, hashed_bytes):
+            pre_hex = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
+            if bcrypt.checkpw(pre_hex, hashed_bytes):
                 return True
-        except ValueError:
+        except Exception:
             pass
+            
+        # 3. SHA256 Binary Pre-hash (fallback)
+        try:
+            pre_bin = hashlib.sha256(password_bytes).digest()
+            if bcrypt.checkpw(pre_bin, hashed_bytes):
+                return True
+        except Exception:
+            pass
+
+        # 4. Plain text comparison (LAST RESORT - only if hash doesn't look like bcrypt)
+        # Bcrypt hashes always start with $2
+        if not hashed_password.startswith('$2'):
+            if plain_password == hashed_password:
+                return True
 
         return False
     except Exception as e:
