@@ -106,16 +106,27 @@ async def startup_id():
 
 @app.get("/api/health")
 async def health_check():
-    health = {"status": "ok", "database": "unknown"}
+    health = {
+        "status": "ok", 
+        "database": "unknown",
+        "env_check": {
+            "MONGO_URI_SET": bool(os.getenv("MONGO_URI")),
+            "DB_NAME": os.getenv("DB_NAME", "interview_coach"),
+            "JWT_SECRET_SET": bool(os.getenv("JWT_SECRET"))
+        }
+    }
     client = get_client()
     if client:
         try:
-            await client.admin.command('ping')
+            # Short timeout for health check
+            await asyncio.wait_for(client.admin.command('ping'), timeout=2.0)
             health["database"] = "connected"
+        except asyncio.TimeoutError:
+            health["database"] = "timeout"
         except Exception as e:
             health["database"] = f"error: {str(e)}"
     else:
-        health["database"] = "not_initialized"
+        health["database"] = "not_initialized (check MONGO_URI)"
     return health
 
 @app.get("/favicon.ico", include_in_schema=False)

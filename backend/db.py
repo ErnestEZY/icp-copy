@@ -6,39 +6,44 @@ import asyncio
 class DatabaseManager:
     _client = None
     _db = None
+    _loop = None
 
     @classmethod
     def get_client(cls):
-        if cls._client is None:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        # Re-initialize if client is missing or loop has changed
+        if cls._client is None or (current_loop is not None and cls._loop != current_loop):
             if not MONGO_URI or "your_mongodb_uri_here" in MONGO_URI:
-                print("CRITICAL: MONGO_URI is not set!")
+                print("CRITICAL: MONGO_URI is not set or using placeholder!")
                 return None
             
             try:
-                # Motor will use the current running loop if we don't pass one
-                # For serverless, we want to ensure we don't leak connections
                 cls._client = AsyncIOMotorClient(
                     MONGO_URI,
                     tlsCAFile=certifi.where(),
                     serverSelectionTimeoutMS=5000,
                     connectTimeoutMS=10000,
                     socketTimeoutMS=20000,
-                    # Crucial for serverless: don't pre-bind to a loop
                     maxPoolSize=10,
                     minPoolSize=1,
                     retryWrites=True,
                     retryReads=True
                 )
-                # Important: check if the client is actually connected
-                # but don't await anything here since it's a classmethod
+                cls._loop = current_loop
+                print(f"INFO: MongoDB client initialized (loop: {id(current_loop)})")
             except Exception as e:
                 print(f"ERROR: Failed to initialize MongoDB client: {e}")
+                cls._client = None
+                cls._loop = None
                 return None
         return cls._client
 
     @classmethod
     def get_db(cls):
-        # Always try to get a fresh client reference to ensure it's bound to the current loop
         client = cls.get_client()
         if client is not None:
             return client[DB_NAME]

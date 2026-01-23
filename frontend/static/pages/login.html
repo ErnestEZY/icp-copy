@@ -88,8 +88,11 @@
                         showVerifyLink = true;
                       }
                     } catch(e){
-                      // If not JSON, show the status text
-                      msg = `Error ${event.detail.xhr.status}: ${event.detail.xhr.statusText || 'Connection failed'}`;
+                      // If not JSON, show the status text and a bit of the response if available
+                      const rawResponse = event.detail.xhr.response;
+                      const responsePreview = typeof rawResponse === 'string' ? rawResponse.substring(0, 100) : 'No response body';
+                      msg = `Error ${event.detail.xhr.status}: ${event.detail.xhr.statusText || 'Connection failed'}. \nPreview: ${responsePreview}`;
+                      console.error('Non-JSON error response:', rawResponse);
                     }
 
                     if (showVerifyLink) {

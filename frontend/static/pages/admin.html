@@ -68,7 +68,10 @@
                     try {
                        msg = JSON.parse(event.detail.xhr.response).detail || msg;
                     } catch(e){
-                       msg = `Error ${event.detail.xhr.status}: ${event.detail.xhr.statusText || 'Connection failed'}`;
+                       const rawResponse = event.detail.xhr.response;
+                       const responsePreview = typeof rawResponse === 'string' ? rawResponse.substring(0, 100) : 'No response body';
+                       msg = `Error ${event.detail.xhr.status}: ${event.detail.xhr.statusText || 'Connection failed'}. \nPreview: ${responsePreview}`;
+                       console.error('Non-JSON error response:', rawResponse);
                     }
                     Swal.fire({
                       icon: 'error',
