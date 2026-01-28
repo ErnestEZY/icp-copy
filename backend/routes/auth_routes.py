@@ -190,7 +190,8 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         # Update last login info
         await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
         
-        token = create_access_token(str(user["_id"]), user.get("role", "user"))
+        # Explicitly set role to "user" for normal login
+        token = create_access_token(str(user["_id"]), "user")
         return Token(access_token=token)
     except HTTPException:
         raise
@@ -256,7 +257,13 @@ async def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = D
     await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
     
     await log_event(str(user["_id"]), username, "admin_login", ip_address, "success")
-    token = create_access_token(str(user["_id"]), user.get("role"))
+    
+    # Ensure role is explicitly set to admin/super_admin for admin login
+    role = user.get("role")
+    if role not in ("admin", "super_admin"):
+        role = "admin" # Fallback safety, though already checked above
+        
+    token = create_access_token(str(user["_id"]), role)
     
     # Fetch admin emails to return for frontend alerting as fallback
     admin_emails = []
