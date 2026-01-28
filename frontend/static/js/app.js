@@ -110,8 +110,11 @@ window.icp.decodeToken = decodeToken;
     .then(j => {
       if (j && j.startup_id) {
         const prev = localStorage.getItem('startup_id') || '';
-        // Force logout if startup_id changed (or is missing) to ensure fresh session on server restart
-        if (prev !== j.startup_id) {
+        // Force logout if startup_id changed to ensure fresh session on server restart
+        // IMPORTANT: Only clear if we actually HAD a previous startup_id and it's different.
+        // If prev is empty, it's just a fresh session/visit, so we just set it.
+        if (prev && prev !== j.startup_id) {
+          console.log("Server restart detected, clearing session...");
           localStorage.clear(); 
           localStorage.setItem('startup_id', j.startup_id);
           window.dispatchEvent(new CustomEvent("auth:changed"));

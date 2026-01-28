@@ -185,7 +185,11 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 
         # Prevent admins from using normal user login flow
         if user.get("role") in ("admin", "super_admin"):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or super_admin cannot login here. Use admin interface.")
+            print(f"DEBUG: Login blocked for {username} - User has role '{user.get('role')}' and tried to use normal login")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail=f"Access Denied: Account with role '{user.get('role')}' must use the admin login page."
+            )
         
         # Update last login info
         await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
