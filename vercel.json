@@ -11,10 +11,10 @@
     },
     {
       "source": "/favicon.ico",
-      "destination": "/api/index.py"
+      "destination": "/frontend/static/favicon-32x32.png"
     },
     {
-      "source": "/((?!api|static|favicon.ico).*)",
+      "source": "/(.*)",
       "destination": "/frontend/index.html"
     }
   ],

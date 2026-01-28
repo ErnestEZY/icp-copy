@@ -25,7 +25,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
-    print(f"GLOBAL ERROR: {exc}")
+    method = request.method
+    url = str(request.url)
+    print(f"GLOBAL ERROR: {method} {url} - {exc}")
     print(traceback.format_exc())
     
     # Don't expose detailed errors in production, but helpful for debugging now
@@ -33,7 +35,12 @@ async def global_exception_handler(request: Request, exc: Exception):
     if isinstance(exc, HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
-            content={"detail": exc.detail, "type": "HTTPException"}
+            content={
+                "detail": exc.detail, 
+                "type": "HTTPException",
+                "method": method,
+                "url": url
+            }
         )
         
     return JSONResponse(
@@ -41,6 +48,8 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={
             "detail": f"Internal Server Error: {detail}",
             "type": type(exc).__name__,
+            "method": method,
+            "url": url,
             "traceback": traceback.format_exc() if os.getenv("DEBUG") == "true" else None
         }
     )
@@ -59,6 +68,31 @@ app.include_router(interview_router)
 app.include_router(admin_router)
 app.include_router(job_router)
 
+# Catch-all route for debugging and SPA support
+@app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def catch_all(request: Request, path_name: str):
+    method = request.method
+    url = str(request.url)
+    print(f"DEBUG: Catch-all reached: {method} {url} (path_name: {path_name})")
+    
+    # If it's a GET request and not for /api, it might be for the SPA
+    if method == "GET" and not path_name.startswith("api/"):
+        index_path = os.path.join(FRONTEND_DIR, "index.html")
+        if os.path.exists(index_path):
+            with open(index_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    
+    # Otherwise return a JSON error that's more descriptive than a default 404/405
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": f"Route not found: {method} {url}",
+            "path_name": path_name,
+            "method": method,
+            "suggestion": "Check your API path and method"
+        }
+    )
+
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
 # Static global startup_id to persist across serverless function re-executions
@@ -67,6 +101,10 @@ _GLOBAL_STARTUP_ID = "1737273600" # Static ID for production stability
 
 # Flag to prevent duplicate initializations in serverless
 _INITIALIZED = False
+
+# Use absolute path for frontend/index.html
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), "frontend")
 
 @app.on_event("startup")
 async def startup():
@@ -81,6 +119,7 @@ async def startup():
     if client:
         try:
             import asyncio
+            print("DEBUG: Pinging MongoDB...")
             await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
             print("Successfully connected to MongoDB")
         except Exception as e:
@@ -90,11 +129,10 @@ async def startup():
 
     # Create TTL index for pending_users (expires after 15 minutes)
     try:
-        # Use DatabaseManager.get_db() to ensure we have the db object
         from .db import DatabaseManager
         db = DatabaseManager.get_db()
         if db is not None:
-            # Check if index already exists to avoid overhead
+            print("DEBUG: Checking TTL indexes...")
             indexes = await db["pending_users"].index_information()
             if "created_at_1" not in indexes:
                 await db["pending_users"].create_index("created_at", expireAfterSeconds=900)
@@ -106,12 +144,14 @@ async def startup():
 
     # Initialize RAG Engine during startup
     try:
+        print("DEBUG: Initializing RAG Engine...")
         rag_engine.initialize()
     except Exception as e:
         print(f"Error initializing RAG Engine: {e}")
     
     # Ensure Admin and cleanup interviews
     try:
+        print("DEBUG: Ensuring admin user...")
         from .auth import ensure_admin
         await ensure_admin()
     except Exception as e:
@@ -119,11 +159,11 @@ async def startup():
     
     if interviews is not None:
         try:
+            print("DEBUG: Cleaning up active interviews...")
             await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
         except Exception:
             pass
             
-    # Use the global static ID instead of a per-process timestamp
     app.state.startup_id = _GLOBAL_STARTUP_ID
     _INITIALIZED = True
     print("INFO: Application startup complete.")
@@ -164,15 +204,15 @@ async def favicon():
 # Catch-all to serve index.html for any unknown routes (SPA support)
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 async def catch_all(request: Request, full_path: str):
-    if not full_path:
-        with open("frontend/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+    # This route handles SPA navigation and root requests
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
     
     if full_path.startswith("api/"):
         return Response(status_code=404)
         
     try:
-        with open("frontend/index.html", "r", encoding="utf-8") as f:
+        with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
     except FileNotFoundError:
-        return HTMLResponse("index.html not found", status_code=404)
+        print(f"ERROR: index.html not found at {index_path}")
+        return HTMLResponse(f"index.html not found at {index_path}", status_code=404)

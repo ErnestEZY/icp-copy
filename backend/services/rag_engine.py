@@ -8,8 +8,13 @@ class RAGEngine:
     Uses a simple keyword-based ranking instead of heavy vector embeddings (PyTorch/FAISS).
     This reduces memory usage from >1GB to <50MB.
     """
-    def __init__(self, docs_dir: str = "backend/data/rag_docs"):
-        self.docs_dir = docs_dir
+    def __init__(self, docs_dir: str = None):
+        if docs_dir is None:
+            # Use absolute path relative to this file
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.docs_dir = os.path.join(base_dir, "data", "rag_docs")
+        else:
+            self.docs_dir = docs_dir
         self.documents = []
         self._initialized = False
 
@@ -18,10 +23,14 @@ class RAGEngine:
         if self._initialized:
             return
 
-        print("Initializing Lightweight RAG Engine...")
-        self._load_documents()
-        self._initialized = True
-        print(f"RAG Engine ready with {len(self.documents)} chunks.")
+        print(f"Initializing Lightweight RAG Engine from {self.docs_dir}...")
+        try:
+            self._load_documents()
+            self._initialized = True
+            print(f"RAG Engine ready with {len(self.documents)} chunks.")
+        except Exception as e:
+            print(f"CRITICAL: RAG Engine initialization failed: {e}")
+            # Don't set _initialized to True so it might retry or stay empty
 
     def _ensure_initialized(self):
         if not self._initialized:

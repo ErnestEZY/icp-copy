@@ -137,6 +137,7 @@ async def verify_email(payload: dict):
     return {"message": "Email verified successfully! Your account has been created."}
 
 @router.post("/login", response_model=Token, dependencies=[Depends(rate_limit)])
+@router.post("/login/", response_model=Token, dependencies=[Depends(rate_limit)], include_in_schema=False)
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     # Ensure username is stripped and lowercase
     username = str(form_data.username).strip().lower()

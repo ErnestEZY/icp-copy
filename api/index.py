@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from backend.main import app
+    print("INFO: FastAPI app imported successfully in index.py")
 except Exception as e:
     import traceback
     print(f"CRITICAL: Failed to import app in index.py: {e}")
@@ -15,3 +16,8 @@ except Exception as e:
 
 # This is for Vercel
 # Vercel's Python runtime will look for the 'app' object in this file.
+
+# Add a simple diagnostic handler if needed
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "message": "Vercel API is running"}
