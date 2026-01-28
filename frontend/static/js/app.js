@@ -122,7 +122,8 @@ window.icp.decodeToken = decodeToken;
         // IMPORTANT: Only clear if we actually HAD a previous startup_id and it's different.
         // If prev is empty, it's just a fresh session/visit, so we just set it.
         if (prev && prev !== j.startup_id) {
-          console.log("Server restart detected, clearing session...");
+          console.warn("Server restart detected! Previous ID:", prev, "New ID:", j.startup_id);
+          console.log("Clearing session and redirecting to home...");
           localStorage.clear(); 
           localStorage.setItem('startup_id', j.startup_id);
           window.dispatchEvent(new CustomEvent("auth:changed"));

@@ -65,7 +65,11 @@
                           timer: 1500,
                           showConfirmButton: false
                         }).then(() => {
-                          window.location='/static/pages/dashboard.html';
+                          if (me.role === 'admin' || me.role === 'super_admin') {
+                            window.location = '/static/pages/admin_panel.html';
+                          } else {
+                            window.location = '/static/pages/dashboard.html';
+                          }
                         });
                       });
                   } else {
