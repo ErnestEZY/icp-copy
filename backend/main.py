@@ -107,67 +107,8 @@ _INITIALIZED = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), "frontend")
 
-@app.on_event("startup")
-async def startup():
-    global _INITIALIZED
-    if _INITIALIZED:
-        return
-    
-    print("INFO: Initializing application startup...")
-    
-    # Check DB Connection
-    client = get_client()
-    if client:
-        try:
-            import asyncio
-            print("DEBUG: Pinging MongoDB...")
-            await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
-            print("Successfully connected to MongoDB")
-        except Exception as e:
-            print(f"CRITICAL: Failed to connect to MongoDB: {e}")
-    else:
-        print("CRITICAL: MongoDB client not initialized")
-
-    # Create TTL index for pending_users (expires after 15 minutes)
-    try:
-        from .db import DatabaseManager
-        db = DatabaseManager.get_db()
-        if db is not None:
-            print("DEBUG: Checking TTL indexes...")
-            indexes = await db["pending_users"].index_information()
-            if "created_at_1" not in indexes:
-                await db["pending_users"].create_index("created_at", expireAfterSeconds=900)
-                print("INFO: TTL index created for pending_users")
-            else:
-                print("INFO: TTL index already exists for pending_users")
-    except Exception as e:
-        print(f"Error creating TTL index for pending_users: {e}")
-
-    # Initialize RAG Engine during startup
-    try:
-        print("DEBUG: Initializing RAG Engine...")
-        rag_engine.initialize()
-    except Exception as e:
-        print(f"Error initializing RAG Engine: {e}")
-    
-    # Ensure Admin and cleanup interviews
-    try:
-        print("DEBUG: Ensuring admin user...")
-        from .auth import ensure_admin
-        await ensure_admin()
-    except Exception as e:
-        print(f"Error ensuring admin: {e}")
-    
-    if interviews is not None:
-        try:
-            print("DEBUG: Cleaning up active interviews...")
-            await interviews.update_many({"ended_at": None}, {"$set": {"ended_at": get_malaysia_time()}})
-        except Exception:
-            pass
-            
-    app.state.startup_id = _GLOBAL_STARTUP_ID
-    _INITIALIZED = True
-    print("INFO: Application startup complete.")
+# Removed app.on_event("startup") as it is deprecated and unreliable in serverless.
+# Initialization is now handled lazily via DatabaseManager and within routes.
 
 @app.get("/api/meta/startup_id")
 async def startup_id():

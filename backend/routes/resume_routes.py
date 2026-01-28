@@ -52,6 +52,13 @@ async def upload_resume(
             except Exception as e:
                 print(f"Warning: Failed to delete temp file {tmp_path}: {e}")
         
+    # Initialize RAG Engine lazily
+    try:
+        from backend.services.rag_engine import rag_engine
+        rag_engine.initialize()
+    except Exception as e:
+        print(f"DEBUG: Non-critical failure in lazy RAG initialization: {e}")
+
     feedback = get_feedback(text)
 
     # Validate if it's actually a resume

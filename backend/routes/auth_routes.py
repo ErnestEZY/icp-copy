@@ -151,6 +151,13 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     username = str(form_data.username).strip().lower()
     ip_address = request.client.host if request.client else "unknown"
     
+    # Lazy initialization for serverless
+    try:
+        from backend.auth import ensure_admin
+        await ensure_admin()
+    except Exception as e:
+        print(f"DEBUG: Non-critical failure in lazy ensure_admin: {e}")
+    
     try:
         # Try direct lookup first
         user = await users.find_one({"email": username})

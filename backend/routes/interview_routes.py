@@ -84,6 +84,13 @@ async def start(
     if not can_start:
         raise HTTPException(status_code=429, detail="Daily interview session limit reached. Resets at 00:00 Malaysia Time.")
     
+    # Initialize RAG Engine lazily
+    try:
+        from backend.services.rag_engine import rag_engine
+        rag_engine.initialize()
+    except Exception as e:
+        print(f"DEBUG: Non-critical failure in lazy RAG initialization: {e}")
+
     sid = str(ObjectId())
     doc = {
         "session_id": sid,
