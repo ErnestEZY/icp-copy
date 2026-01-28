@@ -98,6 +98,7 @@ def include_routes(app: FastAPI):
     app.include_router(job_routes.router)
 
 include_routes(app)
+simplify_operation_ids(app)
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
@@ -105,8 +106,13 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 # This prevents sessions from being cleared unnecessarily in environments like Vercel
 _GLOBAL_STARTUP_ID = "1737273600" # Static ID for production stability
 
-# Flag to prevent duplicate initializations in serverless
-_INITIALIZED = False
+# Add this to ensure /api/auth/login works without trailing slash issues
+from fastapi.routing import APIRoute
+
+def simplify_operation_ids(app: FastAPI) -> None:
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            route.operation_id = route.name
 
 # Use absolute path for frontend/index.html
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -164,12 +170,17 @@ async def catch_all(request: Request, full_path: str):
     
     # If it's an API request that got here, it means it didn't match any route
     if full_path.startswith("api/"):
+        # Log all available routes for debugging when a 404 occurs on an API route
+        available_routes = [f"{list(r.methods) if hasattr(r, 'methods') else '[]'} {r.path}" for r in app.routes]
+        print(f"DEBUG: 404 on API route. Available routes: {available_routes}")
+        
         return JSONResponse(
             status_code=404,
             content={
                 "detail": f"API route not found: {method} {url}",
                 "path": full_path,
-                "method": method
+                "method": method,
+                "available_routes_count": len(available_routes)
             }
         )
     
