@@ -1,26 +1,35 @@
 {
   "version": 2,
-  "routes": [
+  "builds": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/index.py",
-      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+      "src": "api/index.py",
+      "use": "@vercel/python"
     },
     {
-      "src": "/static/(.*)",
-      "dest": "/frontend/static/$1"
+      "src": "frontend/static/**",
+      "use": "@vercel/static"
     },
     {
-      "src": "/favicon.ico",
-      "dest": "/frontend/static/favicon-32x32.png"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/frontend/index.html"
+      "src": "frontend/index.html",
+      "use": "@vercel/static"
     }
   ],
-  "env": {
-    "PYTHONPATH": ".",
-    "DEBUG": "true"
-  }
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "api/index.py"
+    },
+    {
+      "source": "/static/(.*)",
+      "destination": "/frontend/static/$1"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/frontend/static/favicon-32x32.png"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/frontend/index.html"
+    }
+  ]
 }
