@@ -6,13 +6,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import HTMLResponse
-from .routes.auth_routes import router as auth_router
-from .routes.resume_routes import router as resume_router
-from .routes.interview_routes import router as interview_router
-from .routes.admin_routes import router as admin_router
-from .routes.job_routes import router as job_router
-from .services.rag_engine import rag_engine
-from .services.utils import get_malaysia_time
+from .routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
+from .services import rag_engine, utils as backend_utils
 from .db import interviews, pending_users, get_client
 import os
 
@@ -93,11 +88,11 @@ async def log_requests(request: Request, call_next):
         print(traceback.format_exc())
         raise e
 
-app.include_router(auth_router)
-app.include_router(resume_router)
-app.include_router(interview_router)
-app.include_router(admin_router)
-app.include_router(job_router)
+app.include_router(auth_routes.router)
+app.include_router(resume_routes.router)
+app.include_router(interview_routes.router)
+app.include_router(admin_routes.router)
+app.include_router(job_routes.router)
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
@@ -222,6 +217,10 @@ async def debug_routes():
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
+    from fastapi.responses import FileResponse
+    favicon_path = os.path.join(FRONTEND_DIR, "static", "favicon-32x32.png")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path)
     return Response(status_code=204)
 
 # Catch-all to serve index.html for any unknown routes (SPA support)
