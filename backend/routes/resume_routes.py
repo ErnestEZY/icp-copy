@@ -3,14 +3,14 @@ from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 import os
 import base64
-from ..db import resumes, users, fs
-from ..models import ResumeFeedback, ManualProfileIn
-from ..auth import get_current_user
-from ..services.resume_parser import extract_resume_text
-from ..services.ai_feedback import get_feedback
-from ..services.rate_limit import rate_limit
-from ..services.utils import is_gibberish, get_malaysia_time
-from ..services.daily_limit import check_daily_limit, increment_daily_limit
+from backend.db import resumes, users, fs
+from backend.models import ResumeFeedback, ManualProfileIn
+from backend.auth import get_current_user
+from backend.services.resume_parser import extract_resume_text
+from backend.services.ai_feedback import get_feedback
+from backend.services.rate_limit import rate_limit
+from backend.services.utils import is_gibberish, get_malaysia_time
+from backend.services.daily_limit import check_daily_limit, increment_daily_limit
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
 

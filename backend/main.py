@@ -6,9 +6,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import HTMLResponse
-from .routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
-from .services import rag_engine, utils as backend_utils
-from .db import interviews, pending_users, get_client
+from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
+from backend.services import rag_engine, utils as backend_utils
+from backend.db import interviews, pending_users, get_client
 import os
 
 limiter = Limiter(key_func=get_remote_address)
@@ -173,10 +173,6 @@ async def startup():
 async def startup_id():
     return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
 
-@app.get("/api/meta/startup_id")
-async def startup_id():
-    return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
-
 @app.get("/api/health")
 async def health_check():
     health = {
@@ -202,6 +198,10 @@ async def health_check():
     else:
         health["database"] = "not_initialized (check MONGO_URI)"
     return health
+
+@app.post("/api/test-post")
+async def test_post(data: dict = None):
+    return {"message": "POST successful", "received": data}
 
 @app.get("/api/debug-routes")
 async def debug_routes():
@@ -251,4 +251,12 @@ async def catch_all(request: Request, full_path: str):
         )
     
     # Default fallback for other methods/paths
-    return Response(status_code=405 if method != "GET" else 404)
+    return JSONResponse(
+        status_code=405 if method != "GET" else 404,
+        content={
+            "detail": "Method Not Allowed" if method != "GET" else "Not Found",
+            "method": method,
+            "path": full_path,
+            "info": "Reached catch-all in main.py"
+        }
+    )

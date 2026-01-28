@@ -1,5 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
-from .config import MONGO_URI, DB_NAME
+from backend.config import MONGO_URI, DB_NAME
 import certifi
 import asyncio
 

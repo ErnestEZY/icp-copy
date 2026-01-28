@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from fastapi.responses import Response
 import base64
 from bson import ObjectId
-from ..auth import get_current_user
-from ..db import resumes, interviews, users, fs
+from backend.auth import get_current_user
+from backend.db import resumes, interviews, users, fs
 import jwt
-from ..config import JWT_SECRET, JWT_ALGORITHM
+from backend.config import JWT_SECRET, JWT_ALGORITHM
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

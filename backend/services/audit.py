@@ -1,9 +1,9 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
-from ..db import audit_logs, users
-from ..config import ADMIN_ALLOWLIST
-from .email_service import send_admin_alert
-from .utils import get_malaysia_time
+from backend.db import audit_logs, users
+from backend.config import ADMIN_ALLOWLIST
+from backend.services.email_service import send_admin_alert
+from backend.services.utils import get_malaysia_time
 import logging
 
 # Configure logging for console alerts

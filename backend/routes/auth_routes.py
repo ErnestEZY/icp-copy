@@ -2,14 +2,14 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
-from ..db import users, pending_users
-from ..models import UserIn, Token
-from ..auth import hash_password, verify_password, create_access_token, get_current_user
-from ..services.rate_limit import rate_limit
-from ..services.audit import log_event, check_admin_ip, trigger_admin_alert
-from ..services.utils import get_malaysia_time
+from backend.db import users, pending_users
+from backend.models import UserIn, Token
+from backend.auth import hash_password, verify_password, create_access_token, get_current_user
+from backend.services.rate_limit import rate_limit
+from backend.services.audit import log_event, check_admin_ip, trigger_admin_alert
+from backend.services.utils import get_malaysia_time
 
-from ..config import (
+from backend.config import (
     EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID,
     ADMIN_EMAILJS_PUBLIC_KEY, ADMIN_EMAILJS_SERVICE_ID, ADMIN_EMAILJS_TEMPLATE_ID,
     ADMIN_ALERT_EMAILJS_PUBLIC_KEY, ADMIN_ALERT_EMAILJS_SERVICE_ID, ADMIN_ALERT_EMAILJS_TEMPLATE_ID,
@@ -140,8 +140,12 @@ async def verify_email(payload: dict):
     
     return {"message": "Email verified successfully! Your account has been created."}
 
-@router.post("/login", response_model=Token, dependencies=[Depends(rate_limit)])
-@router.post("/login/", response_model=Token, dependencies=[Depends(rate_limit)], include_in_schema=False)
+@router.get("/login")
+async def login_get():
+    return {"message": "Login endpoint exists, but you must use POST to login."}
+
+@router.post("/login", response_model=Token)
+@router.post("/login/", response_model=Token, include_in_schema=False)
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     # Ensure username is stripped and lowercase
     username = str(form_data.username).strip().lower()

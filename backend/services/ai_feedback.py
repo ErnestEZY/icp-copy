@@ -2,9 +2,8 @@ import json
 import re
 from typing import List, Dict, Any
 from mistralai import Mistral
-from ..config import MISTRAL_API_KEY
-
-from .rag_engine import rag_engine
+from backend.config import MISTRAL_API_KEY
+from backend.services.rag_engine import rag_engine
 
 def build_resume_prompt(text: str, context: str = "") -> str:
     prompt = (

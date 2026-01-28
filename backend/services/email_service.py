@@ -1,8 +1,8 @@
-from ..config import (
+from backend.config import (
     EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID,
     ADMIN_ALERT_EMAILJS_PUBLIC_KEY, ADMIN_ALERT_EMAILJS_SERVICE_ID, ADMIN_ALERT_EMAILJS_TEMPLATE_ID
 )
-from ..db import users
+from backend.db import users
 import logging
 import httpx
 

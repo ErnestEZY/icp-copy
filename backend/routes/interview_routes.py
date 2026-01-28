@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Form
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
-from ..db import interviews, users, resumes
-from ..auth import get_current_user
-from ..config import SESSION_MAX_QUESTIONS, INTERVIEW_DEFAULT_QUESTIONS, DAILY_QUESTION_LIMIT
-from ..services.interview_engine import interview_reply
-from ..services.rate_limit import rate_limit
-from ..services.utils import is_gibberish, get_malaysia_time
-from ..services.daily_limit import check_daily_limit, increment_daily_limit
+from backend.db import interviews, users, resumes
+from backend.auth import get_current_user
+from backend.config import SESSION_MAX_QUESTIONS, INTERVIEW_DEFAULT_QUESTIONS, DAILY_QUESTION_LIMIT
+from backend.services.interview_engine import interview_reply
+from backend.services.rate_limit import rate_limit
+from backend.services.utils import is_gibberish, get_malaysia_time
+from backend.services.daily_limit import check_daily_limit, increment_daily_limit
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
 

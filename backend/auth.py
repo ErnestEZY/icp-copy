@@ -6,9 +6,9 @@ import bcrypt
 import jwt
 import hashlib
 import uuid
-from .config import JWT_SECRET, JWT_ALGORITHM, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD, JWT_EXPIRATION_SECONDS
-from .db import users
-from .services.utils import get_malaysia_time
+from backend.config import JWT_SECRET, JWT_ALGORITHM, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD, JWT_EXPIRATION_SECONDS
+from backend.db import users
+from backend.services.utils import get_malaysia_time
 
 # Session Clearing Mechanism:
 # By adding a unique salt on every startup, we invalidate all previously issued tokens.
