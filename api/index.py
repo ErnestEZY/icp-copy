@@ -6,13 +6,10 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-# Also add backend dir directly for some serverless environments
-backend_dir = os.path.join(root_dir, "backend")
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 try:
     from backend.main import app
+    # Explicitly define app here for Vercel's entry point
+    app = app
 except Exception as e:
     import traceback
     from fastapi import FastAPI
@@ -31,6 +28,6 @@ except Exception as e:
             "files_in_root": os.listdir(root_dir) if os.path.exists(root_dir) else "not found",
             "files_in_backend": os.listdir(os.path.join(root_dir, "backend")) if os.path.exists(os.path.join(root_dir, "backend")) else "not found"
         }
-
-# This is for Vercel
-app = app
+    
+    # Even if main app fails, Vercel needs this 'app' object
+    app = app
