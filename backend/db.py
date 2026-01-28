@@ -13,28 +13,30 @@ class DatabaseManager:
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
+            # Fallback if no loop is running (e.g., during initialization in some environments)
             current_loop = None
 
-        # Re-initialize if client is missing or loop has changed
+        # Re-initialize if client is missing or loop has changed (critical for serverless)
         if cls._client is None or (current_loop is not None and cls._loop != current_loop):
             if not MONGO_URI or "your_mongodb_uri_here" in MONGO_URI:
                 print("CRITICAL: MONGO_URI is not set or using placeholder!")
                 return None
             
             try:
+                # Optimized for Serverless: smaller pools, specific timeouts
                 cls._client = AsyncIOMotorClient(
                     MONGO_URI,
                     tlsCAFile=certifi.where(),
                     serverSelectionTimeoutMS=5000,
                     connectTimeoutMS=10000,
                     socketTimeoutMS=20000,
-                    maxPoolSize=10,
+                    maxPoolSize=1, # Reduced for serverless concurrency
                     minPoolSize=1,
                     retryWrites=True,
                     retryReads=True
                 )
                 cls._loop = current_loop
-                print(f"INFO: MongoDB client initialized (loop: {id(current_loop)})")
+                print(f"INFO: MongoDB client re-initialized (loop: {id(current_loop)})")
             except Exception as e:
                 print(f"ERROR: Failed to initialize MongoDB client: {e}")
                 cls._client = None

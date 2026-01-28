@@ -80,6 +80,7 @@ async def startup():
     client = get_client()
     if client:
         try:
+            import asyncio
             await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
             print("Successfully connected to MongoDB")
         except Exception as e:
@@ -88,17 +89,26 @@ async def startup():
         print("CRITICAL: MongoDB client not initialized")
 
     # Create TTL index for pending_users (expires after 15 minutes)
-    if pending_users is not None:
-        try:
-            await pending_users.create_index("created_at", expireAfterSeconds=900)
-        except Exception as e:
-            print(f"Error creating TTL index for pending_users: {e}")
+    try:
+        # Use DatabaseManager.get_db() to ensure we have the db object
+        from .db import DatabaseManager
+        db = DatabaseManager.get_db()
+        if db is not None:
+            # Check if index already exists to avoid overhead
+            indexes = await db["pending_users"].index_information()
+            if "created_at_1" not in indexes:
+                await db["pending_users"].create_index("created_at", expireAfterSeconds=900)
+                print("INFO: TTL index created for pending_users")
+            else:
+                print("INFO: TTL index already exists for pending_users")
+    except Exception as e:
+        print(f"Error creating TTL index for pending_users: {e}")
 
     # Initialize RAG Engine during startup
     try:
         rag_engine.initialize()
     except Exception as e:
-        print(f"Error initializing RAG engine: {e}")
+        print(f"Error initializing RAG Engine: {e}")
     
     # Ensure Admin and cleanup interviews
     try:

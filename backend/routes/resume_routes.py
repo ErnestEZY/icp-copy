@@ -38,19 +38,19 @@ async def upload_resume(
         raise HTTPException(status_code=400, detail="Invalid job title. Please provide a clear title.")
 
     name = file.filename
-    tmp_path = os.path.join("backend", "tmp_" + name.replace(" ", "_"))
     file_bytes = await file.read()
+    # We use /tmp which is the only writable directory on Vercel
+    tmp_path = os.path.join("/tmp", "resume_" + str(ObjectId()) + "_" + name.replace(" ", "_"))
     with open(tmp_path, "wb") as f:
         f.write(file_bytes)
     try:
         text, mime = extract_resume_text(tmp_path)
-    except Exception as e:
+    finally:
         if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise HTTPException(status_code=400, detail=f"Text extraction failed: {str(e)}")
-    
-    if os.path.exists(tmp_path):
-        os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except Exception as e:
+                print(f"Warning: Failed to delete temp file {tmp_path}: {e}")
         
     feedback = get_feedback(text)
 
