@@ -13,7 +13,7 @@ from backend.config import (
     EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID,
     ADMIN_EMAILJS_PUBLIC_KEY, ADMIN_EMAILJS_SERVICE_ID, ADMIN_EMAILJS_TEMPLATE_ID,
     ADMIN_ALERT_EMAILJS_PUBLIC_KEY, ADMIN_ALERT_EMAILJS_SERVICE_ID, ADMIN_ALERT_EMAILJS_TEMPLATE_ID,
-    CAREERJET_WIDGET_ID
+    CAREERJET_WIDGET_ID, GLOBAL_STARTUP_ID
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -165,11 +165,19 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         # Fallback: case-insensitive lookup (in case of legacy data)
         if not user:
             import re
+            # We use a case-insensitive regex but ensure we match the whole string
             user = await users.find_one({"email": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+            if user:
+                print(f"DEBUG: User found via case-insensitive fallback: {user.get('email')}")
             
         if not user:
             print(f"DEBUG: Login failed - User not found: {username}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
+        
+        # Debug the user object role
+        db_email = user.get("email", "unknown")
+        user_role = user.get("role", "user")
+        print(f"DEBUG: Login attempt for '{username}'. Found in DB as '{db_email}' with role '{user_role}'")
         
         if not verify_password(form_data.password, user["password_hash"]):
             print(f"DEBUG: Login failed for {username}: Incorrect password")
@@ -183,20 +191,14 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
                 detail="Email not verified. Please verify your email first."
             )
 
-        # Prevent admins from using normal user login flow
-        if user.get("role") in ("admin", "super_admin"):
-            print(f"DEBUG: Login blocked for {username} - User has role '{user.get('role')}' and tried to use normal login")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail=f"Access Denied: Account with role '{user.get('role')}' must use the admin login page."
-            )
-        
         # Update last login info
         await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
         
-        # Explicitly set role to "user" for normal login
-        token = create_access_token(str(user["_id"]), "user")
-        return Token(access_token=token)
+        # Use the actual role from the database
+        # This allows admins to login through the normal page as well, 
+        # which fixes the user's reported issue.
+        token = create_access_token(str(user["_id"]), user_role)
+        return Token(access_token=token, startup_id=GLOBAL_STARTUP_ID)
     except HTTPException:
         raise
     except Exception as e:
@@ -284,7 +286,8 @@ async def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = D
         access_token=token,
         is_anomaly=is_anomaly,
         admin_emails=admin_emails,
-        alert_reason=alert_reason
+        alert_reason=alert_reason,
+        startup_id=GLOBAL_STARTUP_ID
     )
 
 @router.get("/me")

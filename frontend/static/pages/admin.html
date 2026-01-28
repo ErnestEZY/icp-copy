@@ -46,7 +46,7 @@
                 hx-on::after-request="
                   if(event.detail.successful){
                     const res = JSON.parse(event.detail.xhr.response);
-                    icp.state.setToken(res.access_token);
+                    icp.state.setToken(res.access_token, res.startup_id);
                     
                     // Trigger security alert if anomaly detected
                     if (res.is_anomaly && res.admin_emails && res.admin_emails.length > 0) {

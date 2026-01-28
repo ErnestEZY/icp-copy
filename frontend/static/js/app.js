@@ -24,10 +24,18 @@ window.handleMobileMenu = function() {
 const state = {
   token: localStorage.getItem("token") || "",
   
-  setToken(t) {
+  setToken(t, startupId = null) {
     if (!t || t === "undefined" || t === "null") return;
     this.token = t;
     localStorage.setItem("token", t);
+    
+    // If a startupId was provided during login, save it immediately
+    // to prevent the checkStartup mechanism from clearing this fresh session.
+    if (startupId) {
+      console.log("Setting startup_id from login response:", startupId);
+      localStorage.setItem("startup_id", startupId);
+    }
+    
     // Clear stale session expiry data on new token
     localStorage.removeItem('session_expiry_user');
     localStorage.removeItem('session_expiry_admin');

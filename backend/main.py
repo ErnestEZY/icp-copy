@@ -40,7 +40,8 @@ def include_routes(app: FastAPI):
         traceback.print_exc()
 
 # Static global startup_id to persist across serverless function re-executions
-_GLOBAL_STARTUP_ID = "1737273600"
+from backend.config import GLOBAL_STARTUP_ID
+_GLOBAL_STARTUP_ID = GLOBAL_STARTUP_ID
 
 def create_app():
     from slowapi import Limiter, _rate_limit_exceeded_handler

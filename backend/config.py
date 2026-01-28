@@ -45,3 +45,6 @@ ADMIN_ALERT_EMAILJS_TEMPLATE_ID = os.getenv("ADMIN_ALERT_EMAILJS_TEMPLATE_ID", "
 # Careerjet Configuration
 CAREERJET_API_KEY = os.getenv("CAREERJET_API_KEY", "")
 CAREERJET_WIDGET_ID = os.getenv("CAREERJET_WIDGET_ID", "")
+
+# Server Startup ID for session management
+GLOBAL_STARTUP_ID = "1737273600"

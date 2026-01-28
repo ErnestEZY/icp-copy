@@ -54,28 +54,19 @@
                 hx-on::after-request="
                   if(event.detail.successful){
                     const res = JSON.parse(event.detail.xhr.response);
-                    icp.state.setToken(res.access_token);
+                    icp.state.setToken(res.access_token, res.startup_id);
                     fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+icp.state.token}})
                       .then(r=>r.json())
                       .then(me=>{
-                        if(me.role==='user'){
-                          Swal.fire({
-                            icon: 'success',
-                            title: 'Login Successful!',
-                            text: 'Redirecting to dashboard...',
-                            timer: 1500,
-                            showConfirmButton: false
-                          }).then(() => {
-                            window.location='/static/pages/dashboard.html';
-                          });
-                        } else {
-                          icp.state.clearToken();
-                          Swal.fire({
-                            icon: 'error',
-                            title: 'Access Denied',
-                            text: 'Admin or super_admin cannot use the normal login. Please use the Admin page.',
-                          }).then(()=>{ window.location='/static/pages/admin.html'; });
-                        }
+                        Swal.fire({
+                          icon: 'success',
+                          title: 'Login Successful!',
+                          text: me.role === 'admin' || me.role === 'super_admin' ? 'Welcome Admin. Redirecting...' : 'Redirecting to dashboard...',
+                          timer: 1500,
+                          showConfirmButton: false
+                        }).then(() => {
+                          window.location='/static/pages/dashboard.html';
+                        });
                       });
                   } else {
                     let msg = 'Invalid credentials';
