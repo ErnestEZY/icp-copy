@@ -1,3 +1,6 @@
+import os
+import time
+import traceback
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,191 +9,218 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import HTMLResponse
-# from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
-from backend.services import utils as backend_utils
-from backend.db import interviews, pending_users
-import os
 
-limiter = Limiter(key_func=get_remote_address)
-app = FastAPI()
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Use absolute paths for directories
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
 
-# Global error handler for debugging
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    import traceback
-    method = request.method
-    url = str(request.url)
-    print(f"GLOBAL ERROR: {method} {url} - {exc}")
-    print(traceback.format_exc())
-    
-    # Don't expose detailed errors in production, but helpful for debugging now
-    detail = str(exc)
-    if isinstance(exc, HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "detail": exc.detail, 
-                "type": "HTTPException",
-                "method": method,
-                "url": url
-            }
-        )
-        
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": f"Internal Server Error: {detail}",
-            "type": type(exc).__name__,
-            "method": method,
-            "url": url,
-            "traceback": traceback.format_exc() if os.getenv("DEBUG") == "true" else None
-        }
-    )
+print(f"INFO: Initializing FastAPI application... (BASE_DIR: {BASE_DIR})")
 
-@app.exception_handler(405)
-async def method_not_allowed_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=405,
-        content={
-            "detail": "Method Not Allowed (FastAPI Handler)",
-            "method": request.method,
-            "url": str(request.url),
-            "suggestion": "Check if the endpoint exists and accepts this method."
-        }
-    )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    import time
-    start_time = time.time()
-    method = request.method
-    path = request.url.path
-    print(f"DEBUG: Incoming Request: {method} {path}")
-    
-    try:
-        response = await call_next(request)
-        process_time = (time.time() - start_time) * 1000
-        print(f"DEBUG: Response: {response.status_code} for {method} {path} (took {process_time:.2f}ms)")
-        return response
-    except Exception as e:
-        import traceback
-        print(f"DEBUG: Request Failed: {method} {path} - Error: {e}")
-        print(traceback.format_exc())
-        raise e
-
-# Import routes inside a function to avoid circular/early import issues
-def include_routes(app: FastAPI):
-    from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
-    app.include_router(auth_routes.router)
-    app.include_router(resume_routes.router)
-    app.include_router(interview_routes.router)
-    app.include_router(admin_routes.router)
-    app.include_router(job_routes.router)
-
-include_routes(app)
-simplify_operation_ids(app)
-
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
-
-# Static global startup_id to persist across serverless function re-executions
-# This prevents sessions from being cleared unnecessarily in environments like Vercel
-_GLOBAL_STARTUP_ID = "1737273600" # Static ID for production stability
-
-# Add this to ensure /api/auth/login works without trailing slash issues
-from fastapi.routing import APIRoute
-
+# Helper to simplify operation IDs for cleaner API docs
 def simplify_operation_ids(app: FastAPI) -> None:
+    from fastapi.routing import APIRoute
     for route in app.routes:
         if isinstance(route, APIRoute):
             route.operation_id = route.name
 
-# Use absolute path for frontend/index.html
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), "frontend")
+# Import routes inside a function to avoid circular/early import issues
+def include_routes(app: FastAPI):
+    try:
+        from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
+        app.include_router(auth_routes.router)
+        app.include_router(resume_routes.router)
+        app.include_router(interview_routes.router)
+        app.include_router(admin_routes.router)
+        app.include_router(job_routes.router)
+        print("INFO: All routes included successfully.")
+    except Exception as e:
+        print(f"ERROR: Failed to include routes: {e}")
+        import traceback
+        traceback.print_exc()
 
-# Removed app.on_event("startup") as it is deprecated and unreliable in serverless.
-# Initialization is now handled lazily via DatabaseManager and within routes.
+# Static global startup_id to persist across serverless function re-executions
+_GLOBAL_STARTUP_ID = "1737273600"
 
-@app.get("/api/meta/startup_id")
-async def startup_id():
-    return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
+def create_app():
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
 
-@app.get("/api/health")
-async def health():
-    return {"status": "ok", "environment": "production", "startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
+    limiter = Limiter(key_func=get_remote_address)
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-@app.post("/api/test-post")
-async def test_post(data: dict = None):
-    return {"message": "POST successful", "received": data}
-
-@app.get("/api/debug-routes")
-async def debug_routes():
-    routes = []
-    for route in app.routes:
-        routes.append({
-            "path": route.path,
-            "name": route.name,
-            "methods": list(route.methods) if hasattr(route, "methods") else None
-        })
-    return {"routes": routes}
-
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    from fastapi.responses import FileResponse
-    favicon_path = os.path.join(FRONTEND_DIR, "static", "favicon-32x32.png")
-    if os.path.exists(favicon_path):
-        return FileResponse(favicon_path)
-    return Response(status_code=204)
-
-# Catch-all to serve index.html for any unknown routes (SPA support)
-@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-async def catch_all(request: Request, full_path: str):
-    method = request.method
-    url = str(request.url)
-    print(f"DEBUG: Final Catch-all reached: {method} {url} (full_path: {full_path})")
-    
-    # If it's a GET request and not for /api, it might be for the SPA
-    if method == "GET" and not full_path.startswith("api/"):
-        index_path = os.path.join(FRONTEND_DIR, "index.html")
-        try:
-            with open(index_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-        except FileNotFoundError:
-            return HTMLResponse(f"index.html not found at {index_path}", status_code=404)
-    
-    # If it's an API request that got here, it means it didn't match any route
-    if full_path.startswith("api/"):
-        # Log all available routes for debugging when a 404 occurs on an API route
-        available_routes = [f"{list(r.methods) if hasattr(r, 'methods') else '[]'} {r.path}" for r in app.routes]
-        print(f"DEBUG: 404 on API route. Available routes: {available_routes}")
+    # Global error handler for debugging
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        method = request.method
+        url = str(request.url)
+        print(f"GLOBAL ERROR: {method} {url} - {exc}")
+        import traceback
+        print(traceback.format_exc())
         
+        detail = str(exc)
+        if isinstance(exc, HTTPException):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "detail": exc.detail, 
+                    "type": "HTTPException",
+                    "method": method,
+                    "url": url
+                }
+            )
+            
         return JSONResponse(
-            status_code=404,
+            status_code=500,
             content={
-                "detail": f"API route not found: {method} {url}",
-                "path": full_path,
+                "detail": f"Internal Server Error: {detail}",
+                "type": type(exc).__name__,
                 "method": method,
-                "available_routes_count": len(available_routes)
+                "url": url,
+                "traceback": traceback.format_exc() if os.getenv("DEBUG") == "true" else None
             }
         )
-    
-    # Default fallback for other methods/paths
-    return JSONResponse(
-        status_code=405 if method != "GET" else 404,
-        content={
-            "detail": "Method Not Allowed" if method != "GET" else "Not Found",
-            "method": method,
-            "path": full_path,
-            "info": "Reached catch-all in main.py"
-        }
+
+    @app.exception_handler(405)
+    async def method_not_allowed_handler(request: Request, exc: Exception):
+        return JSONResponse(
+            status_code=405,
+            content={
+                "detail": "Method Not Allowed (FastAPI Handler)",
+                "method": request.method,
+                "url": str(request.url),
+                "suggestion": "Check if the endpoint exists and accepts this method."
+            }
+        )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        import time
+        start_time = time.time()
+        method = request.method
+        path = request.url.path
+        print(f"DEBUG: Incoming Request: {method} {path}")
+        
+        try:
+            response = await call_next(request)
+            process_time = (time.time() - start_time) * 1000
+            print(f"DEBUG: Response: {response.status_code} for {method} {path} (took {process_time:.2f}ms)")
+            return response
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: Request Failed: {method} {path} - Error: {e}")
+            print(traceback.format_exc())
+            raise e
+
+    include_routes(app)
+    simplify_operation_ids(app)
+
+    # Use absolute path for static files
+    static_dir = os.path.join(FRONTEND_DIR, "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+        print(f"INFO: Static files mounted from {static_dir}")
+    else:
+        print(f"WARNING: Static directory not found at {static_dir}")
+
+    @app.get("/api/meta/startup_id")
+    async def startup_id():
+        return {"startup_id": _GLOBAL_STARTUP_ID}
+
+    @app.get("/api/health")
+    async def health():
+        db_status = "not_checked"
+        try:
+            from backend.db import get_client
+            client = get_client()
+            if client:
+                await client.admin.command('ping')
+                db_status = "connected"
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        return {
+            "status": "ok",
+            "database": db_status
+        }
+
+    @app.post("/api/test-post")
+    async def test_post(data: dict = None):
+        return {"message": "POST successful", "received": data}
+
+    @app.get("/api/debug-routes")
+    async def debug_routes():
+        routes = []
+        for route in app.routes:
+            routes.append({
+                "path": route.path,
+                "name": route.name,
+                "methods": list(route.methods) if hasattr(route, "methods") else None
+            })
+        return {"routes": routes}
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        from fastapi.responses import FileResponse, Response
+        favicon_path = os.path.join(FRONTEND_DIR, "static", "favicon-32x32.png")
+        if os.path.exists(favicon_path):
+            return FileResponse(favicon_path)
+        return Response(status_code=204)
+
+    @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    async def catch_all(request: Request, full_path: str):
+        method = request.method
+        url = str(request.url)
+        print(f"DEBUG: Final Catch-all reached: {method} {url} (full_path: {full_path})")
+        
+        if method == "GET" and not full_path.startswith("api/"):
+            from fastapi.responses import HTMLResponse
+            index_path = os.path.join(FRONTEND_DIR, "index.html")
+            try:
+                with open(index_path, "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+            except FileNotFoundError:
+                return HTMLResponse(f"index.html not found at {index_path}", status_code=404)
+        
+        if full_path.startswith("api/"):
+            # Log all available routes for debugging when a 404 occurs on an API route
+            available_routes = [f"{list(r.methods) if hasattr(r, 'methods') else '[]'} {r.path}" for r in app.routes]
+            print(f"DEBUG: 404 on API route. Available routes: {available_routes}")
+            
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "detail": f"API route not found: {method} {url}",
+                    "path": full_path,
+                    "method": method,
+                    "available_routes_count": len(available_routes)
+                }
+            )
+        
+        # Default fallback for other methods/paths
+        return JSONResponse(
+            status_code=405 if method != "GET" else 404,
+            content={
+                "detail": "Method Not Allowed" if method != "GET" else "Not Found",
+                "method": method,
+                "path": full_path,
+                "info": "Reached catch-all in main.py"
+            }
+        )
+
+    return app
+
+app = create_app()
