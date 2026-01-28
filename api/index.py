@@ -6,6 +6,11 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+# Also add backend dir directly for some serverless environments
+backend_dir = os.path.join(root_dir, "backend")
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 try:
     from backend.main import app
 except Exception as e:
