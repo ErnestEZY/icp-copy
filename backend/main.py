@@ -6,9 +6,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import HTMLResponse
-from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
-from backend.services import rag_engine, utils as backend_utils
-from backend.db import interviews, pending_users, get_client
+# from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
+from backend.services import utils as backend_utils
+from backend.db import interviews, pending_users
 import os
 
 limiter = Limiter(key_func=get_remote_address)
@@ -88,11 +88,16 @@ async def log_requests(request: Request, call_next):
         print(traceback.format_exc())
         raise e
 
-app.include_router(auth_routes.router)
-app.include_router(resume_routes.router)
-app.include_router(interview_routes.router)
-app.include_router(admin_routes.router)
-app.include_router(job_routes.router)
+# Import routes inside a function to avoid circular/early import issues
+def include_routes(app: FastAPI):
+    from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
+    app.include_router(auth_routes.router)
+    app.include_router(resume_routes.router)
+    app.include_router(interview_routes.router)
+    app.include_router(admin_routes.router)
+    app.include_router(job_routes.router)
+
+include_routes(app)
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
@@ -115,30 +120,8 @@ async def startup_id():
     return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
 
 @app.get("/api/health")
-async def health_check():
-    health = {
-        "status": "ok", 
-        "database": "unknown",
-        "env_check": {
-            "MONGO_URI_SET": bool(os.getenv("MONGO_URI")),
-            "DB_NAME": os.getenv("DB_NAME", "interview_coach"),
-            "JWT_SECRET_SET": bool(os.getenv("JWT_SECRET"))
-        }
-    }
-    client = get_client()
-    if client:
-        try:
-            import asyncio
-            # Short timeout for health check
-            await asyncio.wait_for(client.admin.command('ping'), timeout=2.0)
-            health["database"] = "connected"
-        except asyncio.TimeoutError:
-            health["database"] = "timeout"
-        except Exception as e:
-            health["database"] = f"error: {str(e)}"
-    else:
-        health["database"] = "not_initialized (check MONGO_URI)"
-    return health
+async def health():
+    return {"status": "ok", "environment": "production", "startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
 
 @app.post("/api/test-post")
 async def test_post(data: dict = None):
@@ -148,11 +131,10 @@ async def test_post(data: dict = None):
 async def debug_routes():
     routes = []
     for route in app.routes:
-        methods = list(route.methods) if hasattr(route, "methods") else []
         routes.append({
             "path": route.path,
-            "name": getattr(route, "name", "unnamed"),
-            "methods": methods
+            "name": route.name,
+            "methods": list(route.methods) if hasattr(route, "methods") else None
         })
     return {"routes": routes}
 
