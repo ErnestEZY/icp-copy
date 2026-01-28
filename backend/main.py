@@ -54,6 +54,18 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
+@app.exception_handler(405)
+async def method_not_allowed_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=405,
+        content={
+            "detail": "Method Not Allowed (FastAPI Handler)",
+            "method": request.method,
+            "url": str(request.url),
+            "suggestion": "Check if the endpoint exists and accepts this method."
+        }
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,36 +74,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    import time
+    start_time = time.time()
+    method = request.method
+    path = request.url.path
+    print(f"DEBUG: Incoming Request: {method} {path}")
+    
+    try:
+        response = await call_next(request)
+        process_time = (time.time() - start_time) * 1000
+        print(f"DEBUG: Response: {response.status_code} for {method} {path} (took {process_time:.2f}ms)")
+        return response
+    except Exception as e:
+        import traceback
+        print(f"DEBUG: Request Failed: {method} {path} - Error: {e}")
+        print(traceback.format_exc())
+        raise e
+
 app.include_router(auth_router)
 app.include_router(resume_router)
 app.include_router(interview_router)
 app.include_router(admin_router)
 app.include_router(job_router)
-
-# Catch-all route for debugging and SPA support
-@app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-async def catch_all(request: Request, path_name: str):
-    method = request.method
-    url = str(request.url)
-    print(f"DEBUG: Catch-all reached: {method} {url} (path_name: {path_name})")
-    
-    # If it's a GET request and not for /api, it might be for the SPA
-    if method == "GET" and not path_name.startswith("api/"):
-        index_path = os.path.join(FRONTEND_DIR, "index.html")
-        if os.path.exists(index_path):
-            with open(index_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-    
-    # Otherwise return a JSON error that's more descriptive than a default 404/405
-    return JSONResponse(
-        status_code=404,
-        content={
-            "detail": f"Route not found: {method} {url}",
-            "path_name": path_name,
-            "method": method,
-            "suggestion": "Check your API path and method"
-        }
-    )
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
@@ -172,6 +178,10 @@ async def startup():
 async def startup_id():
     return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
 
+@app.get("/api/meta/startup_id")
+async def startup_id():
+    return {"startup_id": getattr(app.state, "startup_id", _GLOBAL_STARTUP_ID)}
+
 @app.get("/api/health")
 async def health_check():
     health = {
@@ -186,6 +196,7 @@ async def health_check():
     client = get_client()
     if client:
         try:
+            import asyncio
             # Short timeout for health check
             await asyncio.wait_for(client.admin.command('ping'), timeout=2.0)
             health["database"] = "connected"
@@ -197,22 +208,48 @@ async def health_check():
         health["database"] = "not_initialized (check MONGO_URI)"
     return health
 
+@app.get("/api/debug-routes")
+async def debug_routes():
+    routes = []
+    for route in app.routes:
+        methods = list(route.methods) if hasattr(route, "methods") else []
+        routes.append({
+            "path": route.path,
+            "name": getattr(route, "name", "unnamed"),
+            "methods": methods
+        })
+    return {"routes": routes}
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=204)
 
 # Catch-all to serve index.html for any unknown routes (SPA support)
-@app.get("/{full_path:path}", response_class=HTMLResponse)
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def catch_all(request: Request, full_path: str):
-    # This route handles SPA navigation and root requests
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    method = request.method
+    url = str(request.url)
+    print(f"DEBUG: Final Catch-all reached: {method} {url} (full_path: {full_path})")
     
+    # If it's a GET request and not for /api, it might be for the SPA
+    if method == "GET" and not full_path.startswith("api/"):
+        index_path = os.path.join(FRONTEND_DIR, "index.html")
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        except FileNotFoundError:
+            return HTMLResponse(f"index.html not found at {index_path}", status_code=404)
+    
+    # If it's an API request that got here, it means it didn't match any route
     if full_path.startswith("api/"):
-        return Response(status_code=404)
-        
-    try:
-        with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except FileNotFoundError:
-        print(f"ERROR: index.html not found at {index_path}")
-        return HTMLResponse(f"index.html not found at {index_path}", status_code=404)
+        return JSONResponse(
+            status_code=404,
+            content={
+                "detail": f"API route not found: {method} {url}",
+                "path": full_path,
+                "method": method
+            }
+        )
+    
+    # Default fallback for other methods/paths
+    return Response(status_code=405 if method != "GET" else 404)

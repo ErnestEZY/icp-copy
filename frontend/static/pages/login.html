@@ -43,7 +43,6 @@
           <h2 class="auth-header mb-4">Welcome Back</h2>
           <div id="auth-msg"></div>
           <form hx-post="/api/auth/login" hx-trigger="submit" hx-swap="none"
-                hx-headers='{"Authorization": ""}'
                 hx-on::before-request="
                   Swal.fire({
                     title: 'Logging in...',

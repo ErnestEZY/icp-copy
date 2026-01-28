@@ -18,6 +18,10 @@ from ..config import (
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+@router.get("/test-auth")
+async def test_auth():
+    return {"message": "Auth router is working"}
+
 @router.get("/config")
 async def get_auth_config():
     """Exposes public configuration for EmailJS and Careerjet to the frontend"""
