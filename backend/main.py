@@ -238,3 +238,6 @@ def create_app():
         )
 
     return app
+
+# Create the global app instance for local development
+app = create_app()
