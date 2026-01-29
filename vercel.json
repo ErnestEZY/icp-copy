@@ -1,26 +1,26 @@
 {
   "version": 2,
   "functions": {
-    "api/index.py": {
+    "api/*.py": {
       "maxDuration": 15
     }
   },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.py"
+      "destination": "api/index.py"
     },
     {
       "source": "/static/(.*)",
-      "destination": "/frontend/static/$1"
+      "destination": "frontend/static/$1"
     },
     {
       "source": "/favicon.ico",
-      "destination": "/frontend/static/favicon-32x32.png"
+      "destination": "frontend/static/favicon-32x32.png"
     },
     {
       "source": "/(.*)",
-      "destination": "/frontend/index.html"
+      "destination": "frontend/index.html"
     }
   ]
 }
