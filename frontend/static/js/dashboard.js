@@ -215,12 +215,6 @@ document.addEventListener('alpine:init', () => {
           }
         } catch (e) {}
 
-        const timeoutId = setTimeout(() => {
-          if (this.isLoading) {
-            this.isLoading = false;
-          }
-        }, 5000);
-
         try {
           const token = window.icp ? window.icp.state.token : localStorage.getItem("token");
           await Promise.allSettled([
@@ -245,8 +239,7 @@ document.addEventListener('alpine:init', () => {
             })()
           ]);
         } finally {
-          clearTimeout(timeoutId);
-          setTimeout(() => { this.isLoading = false; }, 500);
+          this.isLoading = false;
         }
       },
 
