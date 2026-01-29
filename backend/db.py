@@ -70,7 +70,6 @@ class CollectionProxy:
 # Note: These proxies are safe to use globally as they resolve the database 
 # dynamically on every access, ensuring compatibility with serverless event loops.
 users = CollectionProxy("users")
-pending_users = CollectionProxy("pending_users")
 resumes = CollectionProxy("resumes")
 interviews = CollectionProxy("interviews")
 usage = CollectionProxy("usage")

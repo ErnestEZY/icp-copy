@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
-from backend.db import users, pending_users
+from backend.db import users
 from backend.models import UserIn, Token
 from backend.auth import hash_password, verify_password, create_access_token, get_current_user
 from backend.services.rate_limit import rate_limit
@@ -10,10 +10,9 @@ from backend.services.audit import log_event, check_admin_ip, trigger_admin_aler
 from backend.services.utils import get_malaysia_time
 
 from backend.config import (
-    EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID,
     ADMIN_EMAILJS_PUBLIC_KEY, ADMIN_EMAILJS_SERVICE_ID, ADMIN_EMAILJS_TEMPLATE_ID,
     ADMIN_ALERT_EMAILJS_PUBLIC_KEY, ADMIN_ALERT_EMAILJS_SERVICE_ID, ADMIN_ALERT_EMAILJS_TEMPLATE_ID,
-    CAREERJET_WIDGET_ID, GLOBAL_STARTUP_ID
+    GLOBAL_STARTUP_ID
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -24,18 +23,14 @@ async def test_auth():
 
 @router.get("/config")
 async def get_auth_config():
-    """Exposes public configuration for EmailJS and Careerjet to the frontend"""
+    """Exposes public configuration for EmailJS to the frontend"""
     return {
-        "emailjs_public_key": EMAILJS_PUBLIC_KEY,
-        "emailjs_service_id": EMAILJS_SERVICE_ID,
-        "emailjs_template_id": EMAILJS_TEMPLATE_ID,
         "admin_emailjs_public_key": ADMIN_EMAILJS_PUBLIC_KEY,
         "admin_emailjs_service_id": ADMIN_EMAILJS_SERVICE_ID,
         "admin_emailjs_template_id": ADMIN_EMAILJS_TEMPLATE_ID,
         "admin_alert_emailjs_public_key": ADMIN_ALERT_EMAILJS_PUBLIC_KEY,
         "admin_alert_emailjs_service_id": ADMIN_ALERT_EMAILJS_SERVICE_ID,
-        "admin_alert_emailjs_template_id": ADMIN_ALERT_EMAILJS_TEMPLATE_ID,
-        "careerjet_widget_id": CAREERJET_WIDGET_ID
+        "admin_alert_emailjs_template_id": ADMIN_ALERT_EMAILJS_TEMPLATE_ID
     }
 
 @router.post("/register", dependencies=[Depends(rate_limit)])
@@ -51,81 +46,15 @@ async def register(payload: UserIn, request: Request):
     
     now = get_malaysia_time()
     
-    # Generate a simple 6-digit OTP for verification
-    import random
-    otp = str(random.randint(100000, 999999))
-    
-    # Store registration data in pending_users collection
-    pending_doc = {
+    # Directly create the permanent account (Skipping OTP)
+    user_doc = {
         "email": email,
         "password_hash": hash_password(payload.password),
         "name": payload.name.strip() if payload.name else None,
-        "verification_otp": otp,
-        "otp_created_at": now,
-        "ip_address": ip_address,
-        "created_at": now
-    }
-    
-    # Update or insert (upsert) to handle multiple registration attempts
-    await pending_users.update_one(
-        {"email": email},
-        {"$set": pending_doc},
-        upsert=True
-    )
-    
-    # Calculate expiry for frontend display (15 mins as requested)
-    expiry_time = (now + timedelta(minutes=15)).strftime("%H:%M")
-    
-    # We return the OTP so the frontend can send it via EmailJS
-    return {
-        "message": "Verification code sent. Please verify email to complete registration.",
-        "otp": otp,
-        "expiry": expiry_time,
-        "email": email
-    }
-
-@router.post("/verify-email")
-async def verify_email(payload: dict):
-    email = payload.get("email", "").strip().lower()
-    otp = payload.get("otp", "").strip()
-    
-    # Check if user is in pending_users
-    pending_user = await pending_users.find_one({"email": email})
-    
-    # If not in pending, check if already verified in users collection
-    if not pending_user:
-        user = await users.find_one({"email": email})
-        if user and user.get("is_verified"):
-            return {"message": "Email already verified. You can now login."}
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration session not found. Please register again.")
-    
-    if pending_user.get("verification_otp") != otp:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
-    
-    # Check if OTP is expired (15 minutes)
-    otp_time = pending_user.get("otp_created_at")
-    if otp_time:
-        if otp_time.tzinfo is None:
-            otp_time = otp_time.replace(tzinfo=timezone.utc)
-        
-        now_utc = datetime.now(timezone.utc)
-        diff = now_utc - otp_time
-        
-        if diff.total_seconds() > 900: # 15 mins
-            # Clean up expired pending registration
-            await pending_users.delete_one({"email": email})
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expired. Please register again.")
-    
-    # OTP is valid! Create the permanent account now
-    now = get_malaysia_time()
-    user_doc = {
-        "email": email,
-        "password_hash": pending_user["password_hash"],
-        "name": pending_user.get("name"),
         "role": "user",
         "created_at": now,
-        "last_login_ip": pending_user.get("ip_address", "unknown"),
-        "is_verified": True,
+        "last_login_ip": ip_address,
+        "is_verified": True, # Automatically verified
         "weekly_question_count": 0,
         "weekly_reset_at": now,
         "daily_resume_count": 0,
@@ -135,10 +64,10 @@ async def verify_email(payload: dict):
     
     await users.insert_one(user_doc)
     
-    # Remove from pending_users
-    await pending_users.delete_one({"email": email})
-    
-    return {"message": "Email verified successfully! Your account has been created."}
+    return {
+        "message": "Registration successful! You can now login.",
+        "email": email
+    }
 
 @router.get("/login")
 async def login_get():
@@ -183,16 +112,8 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             print(f"DEBUG: Login failed for {username}: Incorrect password")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
         
-        # Check if user is verified
-        if not user.get("is_verified", False):
-            print(f"DEBUG: Login failed for {username}: Email not verified")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Email not verified. Please verify your email first."
-            )
-
         # Update last login info
-        await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address}})
+        await users.update_one({"_id": user["_id"]}, {"$set": {"last_login_ip": ip_address, "is_verified": True}})
         
         # Use the actual role from the database
         # This allows admins to login through the normal page as well, 

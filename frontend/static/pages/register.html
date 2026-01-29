@@ -23,8 +23,6 @@
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
   <link rel="stylesheet" href="/static/css/styles.css">
   <script src="/static/js/app.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-  <script src="/static/js/email_service.js"></script>
 </head>
 <body class="auth-page" x-data="{
     logged: !!icp.state.token,
@@ -149,51 +147,18 @@
                   if(event.detail.successful){
                     const res = JSON.parse(event.detail.xhr.response);
                     const email = res.email;
-                    const otp = res.otp;
                     
-                    // Calculate Malaysia Time (UTC+8) + 15 minutes
-                    const now = new Date();
-                    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-                    const mytTime = new Date(utc + (3600000 * 8));
-                    mytTime.setMinutes(mytTime.getMinutes() + 15);
-                    const expiryTime = mytTime.toLocaleTimeString('en-GB', { 
-                      hour: '2-digit', 
-                      minute: '2-digit',
-                      hour12: false 
-                    });
-
-                    // Send email via EmailJS
-                    sendVerificationEmail(email, otp, expiryTime).then(result => {
-                      // Clear form data from localStorage since registration process (part 1) is successful
-                      localStorage.removeItem('reg_name');
-                      localStorage.removeItem('reg_email');
-                      
-                      if (result.success) {
-                        Swal.fire({
-                          icon: 'success',
-                          title: 'OTP Sent Successfully',
-                          html: `
-                            <div class='text-center'>
-                              <p>A verification code has been sent to:</p>
-                              <p class='fw-bold text-primary'>${email}</p>
-                              <p class='small text-secondary'>Please check your inbox (and spam folder) to complete your registration.</p>
-                            </div>
-                          `,
-                          confirmButtonText: 'Enter OTP'
-                        }).then(() => {
-                          window.location='/static/pages/verify.html?email=' + encodeURIComponent(email);
-                        });
-                      } else {
-                        Swal.fire({
-                          icon: 'warning',
-                          title: 'Email Sending Failed',
-                          text: 'Account created, but we couldn\'t send the email: ' + result.error + '. Please contact support.',
-                          confirmButtonText: 'I understand'
-                        }).then(() => {
-                          // Still redirect to verification, maybe they can resend or check later
-                          window.location='/static/pages/verify.html?email=' + encodeURIComponent(email);
-                        });
-                      }
+                    // Clear form data from localStorage
+                    localStorage.removeItem('reg_name');
+                    localStorage.removeItem('reg_email');
+                    
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Registration Successful',
+                      text: 'Your account has been created. You can now login.',
+                      confirmButtonText: 'Go to Login'
+                    }).then(() => {
+                      window.location='/static/pages/login.html';
                     });
                   } else {
                     let msg = 'Registration failed';

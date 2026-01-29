@@ -22,8 +22,6 @@
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
   <link rel="stylesheet" href="/static/css/styles.css">
   <script src="/static/js/app.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-  <script src="/static/js/email_service.js"></script>
 </head>
 <body class="auth-page" x-data="{logged: !!icp.state.token}" @auth:changed.window="logged = !!icp.state.token">
   <nav class="navbar navbar-dark glass-nav">
@@ -87,13 +85,9 @@
                       });
                   } else {
                     let msg = 'Invalid credentials';
-                    let showVerifyLink = false;
                     try {
                       const res = JSON.parse(event.detail.xhr.response);
                       msg = res.detail || msg;
-                      if (msg.toLowerCase().includes('verify your email')) {
-                        showVerifyLink = true;
-                      }
                     } catch(e){
                       // If not JSON, show the status text and a bit of the response if available
                       const rawResponse = event.detail.xhr.response;
@@ -102,28 +96,11 @@
                       console.error('Non-JSON error response:', rawResponse);
                     }
 
-                    if (showVerifyLink) {
-                      const email = document.querySelector('[name=username]').value;
-                      Swal.fire({
-                        icon: 'warning',
-                        title: 'Email Not Verified',
-                        text: msg,
-                        showCancelButton: true,
-                        confirmButtonText: 'Verify Now',
-                        cancelButtonText: 'Close',
-                        confirmButtonColor: '#0d6efd'
-                      }).then((result) => {
-                        if (result.isConfirmed) {
-                          window.location = '/static/pages/verify.html?email=' + encodeURIComponent(email);
-                        }
-                      });
-                    } else {
-                      Swal.fire({
-                        icon: 'error',
-                        title: 'Login Failed',
-                        text: msg
-                      });
-                    }
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'Login Failed',
+                      text: msg
+                    });
                   }
                 ">
             <div class="mb-4">

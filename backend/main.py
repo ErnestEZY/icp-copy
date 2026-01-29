@@ -27,12 +27,11 @@ def simplify_operation_ids(app: FastAPI) -> None:
 # Import routes inside a function to avoid circular/early import issues
 def include_routes(app: FastAPI):
     try:
-        from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes, job_routes
+        from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes
         app.include_router(auth_routes.router)
         app.include_router(resume_routes.router)
         app.include_router(interview_routes.router)
         app.include_router(admin_routes.router)
-        app.include_router(job_routes.router)
         print("INFO: All routes included successfully.")
     except Exception as e:
         print(f"ERROR: Failed to include routes: {e}")
