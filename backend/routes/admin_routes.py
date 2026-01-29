@@ -7,7 +7,7 @@ from backend.db import resumes, interviews, users, fs
 import jwt
 from backend.config import JWT_SECRET, JWT_ALGORITHM
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"])
 
 def ensure_admin_role(current):
     if current.get("role") not in ("admin", "super_admin"):

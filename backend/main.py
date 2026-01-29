@@ -28,11 +28,11 @@ def simplify_operation_ids(app: FastAPI) -> None:
 def include_routes(app: FastAPI):
     try:
         from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes
-        app.include_router(auth_routes.router)
-        app.include_router(resume_routes.router)
-        app.include_router(interview_routes.router)
-        app.include_router(admin_routes.router)
-        print("INFO: All routes included successfully.")
+        app.include_router(auth_routes.router, prefix="/api")
+        app.include_router(resume_routes.router, prefix="/api")
+        app.include_router(interview_routes.router, prefix="/api")
+        app.include_router(admin_routes.router, prefix="/api")
+        print("INFO: All routes included successfully with /api prefix.")
     except Exception as e:
         print(f"ERROR: Failed to include routes: {e}")
         import traceback
@@ -184,9 +184,11 @@ def create_app():
     async def catch_all(request: Request, full_path: str):
         method = request.method
         url = str(request.url)
-        print(f"DEBUG: Final Catch-all reached: {method} {url} (full_path: {full_path})")
+        path = request.url.path
+        print(f"DEBUG: Final Catch-all reached: {method} {url} (full_path: {full_path}, path: {path})")
         
-        if method == "GET" and not full_path.startswith("api/"):
+        # If it's a GET request and doesn't look like an API call, serve the frontend
+        if method == "GET" and not path.startswith("/api/"):
             from fastapi.responses import HTMLResponse
             index_path = os.path.join(FRONTEND_DIR, "index.html")
             try:
@@ -195,18 +197,26 @@ def create_app():
             except FileNotFoundError:
                 return HTMLResponse(f"index.html not found at {index_path}", status_code=404)
         
-        if full_path.startswith("api/"):
+        # If it's an API call that reached here, it's a 404
+        if path.startswith("/api/"):
             # Log all available routes for debugging when a 404 occurs on an API route
-            available_routes = [f"{list(r.methods) if hasattr(r, 'methods') else '[]'} {r.path}" for r in app.routes]
+            available_routes = []
+            for r in app.routes:
+                methods = list(r.methods) if hasattr(r, 'methods') else []
+                path_str = r.path if hasattr(r, 'path') else str(r)
+                available_routes.append(f"{methods} {path_str}")
+            
             print(f"DEBUG: 404 on API route. Available routes: {available_routes}")
             
             return JSONResponse(
                 status_code=404,
                 content={
-                    "detail": f"API route not found: {method} {url}",
-                    "path": full_path,
+                    "detail": f"API route not found: {method} {path}",
+                    "path": path,
+                    "full_path_param": full_path,
                     "method": method,
-                    "available_routes_count": len(available_routes)
+                    "available_routes_count": len(available_routes),
+                    "tip": "Check if the route is registered in include_routes() and has the correct prefix."
                 }
             )
         
@@ -216,7 +226,7 @@ def create_app():
             content={
                 "detail": "Method Not Allowed" if method != "GET" else "Not Found",
                 "method": method,
-                "path": full_path,
+                "path": path,
                 "info": "Reached catch-all in main.py"
             }
         )

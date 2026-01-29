@@ -12,7 +12,7 @@ from backend.services.rate_limit import rate_limit
 from backend.services.utils import is_gibberish, get_malaysia_time
 from backend.services.daily_limit import check_daily_limit, increment_daily_limit
 
-router = APIRouter(prefix="/api/resume", tags=["resume"])
+router = APIRouter(prefix="/resume", tags=["resume"])
 
 @router.get("/limits")
 async def get_resume_limits(current=Depends(get_current_user)):

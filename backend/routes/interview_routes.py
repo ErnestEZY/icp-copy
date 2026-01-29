@@ -9,7 +9,7 @@ from backend.services.rate_limit import rate_limit
 from backend.services.utils import is_gibberish, get_malaysia_time
 from backend.services.daily_limit import check_daily_limit, increment_daily_limit
 
-router = APIRouter(prefix="/api/interview", tags=["interview"])
+router = APIRouter(prefix="/interview", tags=["interview"])
 
 @router.get("/limits")
 async def get_interview_limits(current=Depends(get_current_user)):
