@@ -15,7 +15,7 @@ from backend.config import (
     GLOBAL_STARTUP_ID
 )
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.get("/test-auth")
 async def test_auth():

@@ -17,6 +17,8 @@ FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
 
 print(f"INFO: Initializing FastAPI application... (BASE_DIR: {BASE_DIR})")
 
+from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes
+
 # Helper to simplify operation IDs for cleaner API docs
 def simplify_operation_ids(app: FastAPI) -> None:
     from fastapi.routing import APIRoute
@@ -24,19 +26,20 @@ def simplify_operation_ids(app: FastAPI) -> None:
         if isinstance(route, APIRoute):
             route.operation_id = route.name
 
-# Import routes inside a function to avoid circular/early import issues
+# Register routers
 def include_routes(app: FastAPI):
     try:
-        from backend.routes import auth_routes, resume_routes, interview_routes, admin_routes
-        app.include_router(auth_routes.router, prefix="/api")
-        app.include_router(resume_routes.router, prefix="/api")
-        app.include_router(interview_routes.router, prefix="/api")
-        app.include_router(admin_routes.router, prefix="/api")
-        print("INFO: All routes included successfully with /api prefix.")
+        app.include_router(auth_routes.router)
+        app.include_router(resume_routes.router)
+        app.include_router(interview_routes.router)
+        app.include_router(admin_routes.router)
+        print("INFO: All routes included successfully.")
     except Exception as e:
         print(f"ERROR: Failed to include routes: {e}")
         import traceback
         traceback.print_exc()
+        # Raise it so we can see it in serverless logs/responses
+        raise e
 
 # Static global startup_id to persist across serverless function re-executions
 from backend.config import GLOBAL_STARTUP_ID
@@ -51,6 +54,10 @@ def create_app():
 
     limiter = Limiter(key_func=get_remote_address)
     app = FastAPI()
+    
+    # Register routes immediately
+    include_routes(app)
+    
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -125,7 +132,6 @@ def create_app():
             print(traceback.format_exc())
             raise e
 
-    include_routes(app)
     simplify_operation_ids(app)
 
     # Use absolute path for static files
@@ -199,24 +205,24 @@ def create_app():
         
         # If it's an API call that reached here, it's a 404
         if path.startswith("/api/"):
-            # Log all available routes for debugging when a 404 occurs on an API route
-            available_routes = []
+            # Log all available routes for debugging
+            available_paths = []
             for r in app.routes:
-                methods = list(r.methods) if hasattr(r, 'methods') else []
-                path_str = r.path if hasattr(r, 'path') else str(r)
-                available_routes.append(f"{methods} {path_str}")
+                if hasattr(r, 'path'):
+                    available_paths.append(f"{list(r.methods) if hasattr(r, 'methods') else '[]'} {r.path}")
             
-            print(f"DEBUG: 404 on API route. Available routes: {available_routes}")
+            print(f"DEBUG: 404 on API route. Path: {path}. Available: {available_paths}")
             
             return JSONResponse(
                 status_code=404,
                 content={
                     "detail": f"API route not found: {method} {path}",
-                    "path": path,
-                    "full_path_param": full_path,
-                    "method": method,
-                    "available_routes_count": len(available_routes),
-                    "tip": "Check if the route is registered in include_routes() and has the correct prefix."
+                    "available_routes": available_paths[:20],
+                    "total_routes": len(app.routes),
+                    "root_dir": ROOT_DIR,
+                    "base_dir": BASE_DIR,
+                    "sys_path": sys.path[:5],
+                    "tip": "If the route you expect is not in 'available_routes', check include_routes()."
                 }
             )
         
@@ -232,5 +238,3 @@ def create_app():
         )
 
     return app
-
-app = create_app()
