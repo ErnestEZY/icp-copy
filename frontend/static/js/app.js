@@ -29,17 +29,30 @@ const state = {
     this.token = t;
     localStorage.setItem("token", t);
     
+    // Clear stale session expiry data on new token
+    localStorage.removeItem('session_expiry_user');
+    localStorage.removeItem('session_expiry_admin');
+    
     // If a startupId was provided during login, save it immediately
     // to prevent the checkStartup mechanism from clearing this fresh session.
     if (startupId) {
       console.log("Setting startup_id from login response:", startupId);
       localStorage.setItem("startup_id", startupId);
+      window.dispatchEvent(new CustomEvent("auth:changed"));
+    } else {
+      // If no startupId provided, fetch it to ensure we're synced
+      fetch('/api/meta/startup_id')
+        .then(r => r.ok ? r.json() : null)
+        .then(j => {
+          if (j && j.startup_id) {
+            localStorage.setItem('startup_id', j.startup_id);
+            window.dispatchEvent(new CustomEvent("auth:changed"));
+          }
+        })
+        .catch(() => {
+          window.dispatchEvent(new CustomEvent("auth:changed"));
+        });
     }
-    
-    // Clear stale session expiry data on new token
-    localStorage.removeItem('session_expiry_user');
-    localStorage.removeItem('session_expiry_admin');
-    window.dispatchEvent(new CustomEvent("auth:changed"));
   },
   
   clearToken() {

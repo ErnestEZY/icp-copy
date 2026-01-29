@@ -55,22 +55,35 @@
                   if(event.detail.successful){
                     const res = JSON.parse(event.detail.xhr.response);
                     icp.state.setToken(res.access_token, res.startup_id);
+                    
+                    // Simple role detection from token before fetch /me as fallback
+                    const payload = icp.decodeToken(res.access_token);
+                    const role = payload ? payload.role : 'user';
+                    
                     fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+icp.state.token}})
                       .then(r=>r.json())
                       .then(me=>{
+                        const finalRole = me.role || role;
                         Swal.fire({
                           icon: 'success',
                           title: 'Login Successful!',
-                          text: me.role === 'admin' || me.role === 'super_admin' ? 'Welcome Admin. Redirecting...' : 'Redirecting to dashboard...',
+                          text: finalRole === 'admin' || finalRole === 'super_admin' ? 'Welcome Admin. Redirecting...' : 'Redirecting to dashboard...',
                           timer: 1500,
                           showConfirmButton: false
                         }).then(() => {
-                          if (me.role === 'admin' || me.role === 'super_admin') {
-                            window.location = '/static/pages/admin_panel.html';
+                          if (finalRole === 'admin' || finalRole === 'super_admin') {
+                            window.location.href = '/static/pages/admin_panel.html';
                           } else {
-                            window.location = '/static/pages/dashboard.html';
+                            window.location.href = '/static/pages/dashboard.html';
                           }
                         });
+                      })
+                      .catch(err => {
+                        console.error('Error fetching user info:', err);
+                        // Fallback to role from token if fetch fails
+                        window.location.href = (role === 'admin' || role === 'super_admin') 
+                          ? '/static/pages/admin_panel.html' 
+                          : '/static/pages/dashboard.html';
                       });
                   } else {
                     let msg = 'Invalid credentials';
