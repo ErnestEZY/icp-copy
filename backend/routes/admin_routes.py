@@ -147,7 +147,8 @@ async def get_resume_file(resume_id: str, current=Depends(get_current_user)):
         fid = r.get("file_id")
         if fid:
             try:
-                stream = await fs.open_download_stream(ObjectId(fid))
+                bucket = await fs.get_fs()
+                stream = await bucket.open_download_stream(ObjectId(fid))
                 raw = await stream.read()
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"File download error: {e}")
@@ -164,6 +165,33 @@ async def get_resume_file(resume_id: str, current=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     headers = {"Content-Disposition": f'inline; filename="{r.get("filename", "resume")}"'}
     return Response(content=raw, media_type=r.get("mime_type") or "application/octet-stream", headers=headers)
+
+@router.delete("/resumes/{resume_id}")
+async def delete_resume(resume_id: str, current=Depends(get_current_user)):
+    ensure_admin_role(current)
+    try:
+        oid = ObjectId(resume_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID")
+        
+    r = await resumes.find_one({"_id": oid})
+    if not r:
+        raise HTTPException(status_code=404, detail="Not found")
+        
+    # Also delete the file from GridFS if it exists
+    fid = r.get("file_id")
+    if fid:
+        try:
+            # Re-fetch the bucket instance to ensure it's fresh for this request
+            bucket = await fs.get_fs()
+            if bucket:
+                await bucket.delete(ObjectId(fid))
+        except Exception as e:
+            print(f"Warning: Failed to delete GridFS file {fid}: {e}")
+            pass # Continue even if file deletion fails
+            
+    await resumes.delete_one({"_id": oid})
+    return {"deleted": True}
 
 @router.get("/resumes/{resume_id}/file_open")
 async def get_resume_file_open(resume_id: str, token: str = Query(...)):
@@ -192,7 +220,8 @@ async def get_resume_file_open(resume_id: str, token: str = Query(...)):
         raw = None
         fid = r.get("file_id")
         if fid:
-            stream = await fs.open_download_stream(ObjectId(fid))
+            bucket = await fs.get_fs()
+            stream = await bucket.open_download_stream(ObjectId(fid))
             raw = await stream.read()
         elif r.get("file_b64"):
             raw = base64.b64decode(r.get("file_b64"))

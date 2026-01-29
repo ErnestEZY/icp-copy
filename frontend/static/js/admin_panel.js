@@ -189,6 +189,43 @@ function panel(){
         })
         .finally(()=>{ btns.forEach(b=>b.disabled=false); });
     },
+    async deleteResume(id) {
+      const result = await Swal.fire({
+        title: 'Are you sure?',
+        text: "You won't be able to revert this!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, delete it!'
+      });
+
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch('/api/admin/resumes/' + id, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + icp.state.token }
+          });
+
+          if (res.ok) {
+            await Swal.fire({
+              icon: 'success',
+              title: 'Deleted!',
+              text: 'The resume has been deleted.',
+              timer: 1500,
+              showConfirmButton: false
+            });
+            this.detail = null;
+            this.load();
+          } else {
+            const data = await res.json();
+            throw new Error(data.detail || 'Failed to delete');
+          }
+        } catch (error) {
+          Swal.fire('Error', error.message, 'error');
+        }
+      }
+    },
     async notify(id) {
       try {
         const res = await fetch('/api/admin/resumes/' + id, {

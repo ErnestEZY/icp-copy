@@ -110,7 +110,8 @@ async def upload_resume(
     if consent:
         # Store file in GridFS
         try:
-            grid_id = await fs.upload_from_stream(name, file_bytes)
+            bucket = await fs.get_fs()
+            grid_id = await bucket.upload_from_stream(name, file_bytes)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to store file: {e}")
         doc = {

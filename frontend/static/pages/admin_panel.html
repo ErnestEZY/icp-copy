@@ -144,6 +144,9 @@
           <button class="btn btn-info px-3" @click="notify(detail.id)" :disabled="detail.status !== 'approved' && detail.status !== 'rejected'">
             <i class="bi bi-envelope me-1"></i> Notify
           </button>
+          <button class="btn btn-danger px-3" @click="deleteResume(detail.id)">
+            <i class="bi bi-trash me-1"></i> Delete
+          </button>
           <button class="btn btn-outline-light" @click="detail = null">Close</button>
         </div>
       </div>

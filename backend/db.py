@@ -78,20 +78,27 @@ audit_logs = CollectionProxy("audit_logs")
 # For GridFS, we need a slightly different approach
 class GridFSProxy:
     _fs = None
+    _loop = None
     
     @classmethod
-    def get_fs(cls):
-        if cls._fs is None:
+    async def get_fs(cls):
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if cls._fs is None or (current_loop is not None and cls._loop != current_loop):
             db = DatabaseManager.get_db()
             if db is not None:
                 cls._fs = AsyncIOMotorGridFSBucket(db, bucket_name="resume_files")
+                cls._loop = current_loop
         return cls._fs
 
     def __getattr__(self, name):
-        fs = self.get_fs()
-        if fs is None:
-            raise RuntimeError("GridFS not initialized")
-        return getattr(fs, name)
+        # Note: This sync __getattr__ might fail if it tries to call an async method 
+        # without await, but for the proxy usage it usually just returns the method.
+        # However, for GridFS it's better to use get_fs() directly since it's async-init.
+        raise RuntimeError("Use 'await fs.get_fs()' instead of direct access for GridFSProxy")
 
 fs = GridFSProxy()
 
